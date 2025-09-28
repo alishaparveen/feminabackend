@@ -42,26 +42,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
 
 // Health check endpoint
+app.get('/v1/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// Health check endpoint (also support root for compatibility)
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 // Public routes (no auth required)
-app.use('/api/auth', authRoutes);
-app.use('/api/resources', resourcesRoutes);
+app.use('/v1/auth', authRoutes);
+app.use('/v1/resources', resourcesRoutes);
 
 // Protected routes (auth required)
-app.use('/api/posts', authMiddleware, postsRoutes);
-app.use('/api/feed', authMiddleware, feedRoutes);
-app.use('/api/ai', authMiddleware, aiRoutes);
-app.use('/api/experts', authMiddleware, expertsRoutes);
-app.use('/api/bookings', authMiddleware, bookingsRoutes);
-app.use('/api/marketplace', authMiddleware, marketplaceRoutes);
-app.use('/api/payments', authMiddleware, paymentsRoutes);
-app.use('/api/uploads', authMiddleware, uploadsRoutes);
+app.use('/v1/posts', authMiddleware, postsRoutes);
+app.use('/v1/feed', authMiddleware, feedRoutes);
+app.use('/v1/ai', authMiddleware, aiRoutes);
+app.use('/v1/experts', authMiddleware, expertsRoutes);
+app.use('/v1/bookings', authMiddleware, bookingsRoutes);
+app.use('/v1/marketplace', authMiddleware, marketplaceRoutes);
+app.use('/v1/payments', authMiddleware, paymentsRoutes);
+app.use('/v1/uploads', authMiddleware, uploadsRoutes);
 
 // Admin-only routes
-app.use('/api/moderation', authMiddleware, adminOnly, moderationRoutes);
+app.use('/v1/moderation', authMiddleware, adminOnly, moderationRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

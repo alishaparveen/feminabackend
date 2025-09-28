@@ -39,23 +39,27 @@ app.use(express_1.default.urlencoded({ extended: true }));
 // Apply rate limiting
 app.use(rateLimit_1.rateLimiter);
 // Health check endpoint
+app.get('/v1/health', (req, res) => {
+    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+// Health check endpoint (also support root for compatibility)
 app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 // Public routes (no auth required)
-app.use('/api/auth', auth_2.authRoutes);
-app.use('/api/resources', resources_1.resourcesRoutes);
+app.use('/v1/auth', auth_2.authRoutes);
+app.use('/v1/resources', resources_1.resourcesRoutes);
 // Protected routes (auth required)
-app.use('/api/posts', auth_1.authMiddleware, posts_1.postsRoutes);
-app.use('/api/feed', auth_1.authMiddleware, feed_1.feedRoutes);
-app.use('/api/ai', auth_1.authMiddleware, ai_1.aiRoutes);
-app.use('/api/experts', auth_1.authMiddleware, experts_1.expertsRoutes);
-app.use('/api/bookings', auth_1.authMiddleware, bookings_1.bookingsRoutes);
-app.use('/api/marketplace', auth_1.authMiddleware, marketplace_1.marketplaceRoutes);
-app.use('/api/payments', auth_1.authMiddleware, payments_1.paymentsRoutes);
-app.use('/api/uploads', auth_1.authMiddleware, uploads_1.uploadsRoutes);
+app.use('/v1/posts', auth_1.authMiddleware, posts_1.postsRoutes);
+app.use('/v1/feed', auth_1.authMiddleware, feed_1.feedRoutes);
+app.use('/v1/ai', auth_1.authMiddleware, ai_1.aiRoutes);
+app.use('/v1/experts', auth_1.authMiddleware, experts_1.expertsRoutes);
+app.use('/v1/bookings', auth_1.authMiddleware, bookings_1.bookingsRoutes);
+app.use('/v1/marketplace', auth_1.authMiddleware, marketplace_1.marketplaceRoutes);
+app.use('/v1/payments', auth_1.authMiddleware, payments_1.paymentsRoutes);
+app.use('/v1/uploads', auth_1.authMiddleware, uploads_1.uploadsRoutes);
 // Admin-only routes
-app.use('/api/moderation', auth_1.authMiddleware, auth_1.adminOnly, moderation_1.moderationRoutes);
+app.use('/v1/moderation', auth_1.authMiddleware, auth_1.adminOnly, moderation_1.moderationRoutes);
 // 404 handler
 app.use('*', (req, res) => {
     res.status(404).json({
