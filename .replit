@@ -16,15 +16,15 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Firebase Backend"
+args = "Simple Backend"
 
 [[workflows.workflow]]
-name = "Firebase Backend"
+name = "Simple Backend"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "firebase emulators:start --only functions,firestore,auth,storage,ui"
+args = "node server-simple.js"
 waitForPort = 5000
 
 [workflows.workflow.metadata]
@@ -33,10 +33,6 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 5001
-externalPort = 3003
 
 [[ports]]
 localPort = 8080
@@ -79,13 +75,10 @@ localPort = 9199
 externalPort = 3002
 
 [[ports]]
-localPort = 33755
-externalPort = 8081
-
-[[ports]]
-localPort = 44243
-externalPort = 5173
+localPort = 46177
+externalPort = 3003
 
 [deployment]
-deploymentTarget = "vm"
-run = ["firebase", "emulators:start", "--only", "functions,firestore,auth,storage,ui"]
+deploymentTarget = "autoscale"
+run = ["node", "server-simple.js"]
+build = ["npm", "run", "build"]
