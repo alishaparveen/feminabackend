@@ -12,21 +12,19 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Simple health check endpoints
+// API ROUTES FIRST (as per your guidance)
 app.get('/v1/health', (req, res) => {
   res.json({ 
+    ok: true,
     status: 'healthy', 
     timestamp: new Date().toISOString(),
     message: 'Femina Backend API is running!' 
   });
 });
 
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    message: 'Femina Backend API is running!' 
-  });
+// Root endpoint for deployment verification
+app.get('/', (req, res) => {
+  res.type('text').send('Femina API - Backend Running');
 });
 
 // Test endpoints
