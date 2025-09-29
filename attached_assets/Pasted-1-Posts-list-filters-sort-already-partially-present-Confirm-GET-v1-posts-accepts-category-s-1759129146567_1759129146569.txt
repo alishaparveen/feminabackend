@@ -1,0 +1,82 @@
+1) Posts list filters & sort (already partially present)
+
+Confirm GET /v1/posts accepts: category, sortBy=new|top|discussed, timeframe=24h|7d|30d|all, page (default 1), limit (default 20).
+
+Exclude pending and removed.
+
+Response shape:
+
+{ "success": true, "data": { "posts": [...], "pagination": { "currentPage": 1, "hasMore": true, "totalShown": 20 } } }
+
+
+Add optional updatedAfter=<ISO> filter to return posts created/updated after that timestamp (for FE auto-refresh). If not feasible quickly, skip.
+
+2) Categories
+
+Extend enum to include: health, relationships, fitness, career, fun, general, parenting, lifestyle, support.
+
+Validate on POST /v1/posts.
+
+3) Create post
+
+POST /v1/posts (auth required): validate body; set moderationStatus='approved' for now; return created post with id.
+
+4) Likes
+
+POST /v1/posts/:id/like toggles per-user like; returns { liked: boolean, likes: number }.
+
+Use transactions/atomic increments; store per-user state to prevent double likes.
+
+5) Comments
+
+GET /v1/posts/:id/comments with pagination (page, limit); newest first.
+
+POST /v1/posts/:id/comments creates a comment; increments post’s comments count atomically.
+
+POST /v1/posts/:id/comments/:commentId/like toggles like on a comment; returns { liked, likes }.
+
+6) Views
+
+GET /v1/posts/:id increments a views counter with a cheap per-uid + 10-min window de-dupe (e.g., keep a small “postViews” subcollection keyed by uid+bucket).
+
+7) Moderation
+
+POST /v1/moderation/report (auth) to submit report with contentId, contentType='post'|'comment', reason, optional description. Prevent duplicate “pending” reports by same uid.
+
+Moderators (role in users doc): GET /v1/moderation/queue (filters), PUT /v1/moderation/review/:reportId with action='approve'|'remove'|'ban' updates target doc’s moderationStatus. Normal users don’t see pending|removed in feed.
+
+8) Output normalization
+
+Ensure list endpoints return fields FE will map: id, content, category, author{id,name,avatarUrl,verified}, createdAt, likes, comments, moderationStatus, views, images, tags, isAnonymous.
+
+9) Tests (requests.http + seed)
+
+Add tests/requests.http with:
+
+Health
+
+Create Post (category=fun)
+
+List Posts (category=fun, sort=new)
+
+Like Post (toggle twice; verify count)
+
+Add Comment, List Comments
+
+Report Post
+
+Save responses to tests/api-run.log including IDs.
+
+10) Report back
+
+List changed files, any new indexes needed for Firestore, and final /v1/* endpoints.
+
+Acceptance criteria
+
+All endpoints above return JSON 200/201 and match shapes.
+
+Likes/comments counts update atomically and reflect after reload.
+
+Feed filters work by category, sortBy, timeframe.
+
+Moderation reports create queue entries; feed hides pending|removed.
