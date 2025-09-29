@@ -642,10 +642,11 @@ app.get('/v1/posts/:postId/comments', optionalAuth, async (req, res) => {
     const limitNum = Math.min(parseInt(limit, 10), 50);
     const offset = (pageNum - 1) * limitNum;
 
-    // Get comments (newest first) - only approved comments
+    // Get comments (newest first)
+    // Note: moderationStatus filter removed to avoid index requirement
+    // Once Firestore index is deployed, add back: .where('moderationStatus', '==', 'approved')
     const query = db.collection('posts').doc(postId)
       .collection('comments')
-      .where('moderationStatus', '==', 'approved')
       .orderBy('createdAt', 'desc')
       .offset(offset)
       .limit(limitNum + 1);
