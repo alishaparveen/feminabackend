@@ -108,6 +108,53 @@ const adminGuard = async (req, res, next) => {
   }
 };
 
+// Staff guard middleware (allows moderators OR admins)
+const staffGuard = async (req, res, next) => {
+  try {
+    // Check if user is a moderator first
+    if (req.user.role === 'moderator') {
+      return next();
+    }
+    
+    // Then check admin status using existing admin guard logic
+    // Check 1: Firebase custom claims role=admin (primary fast check)
+    if (req.user.customClaims.role === 'admin') {
+      return next();
+    }
+    
+    // Check 2: Bootstrap admin emails
+    if (ADMIN_EMAILS.includes(req.user.email)) {
+      return next();
+    }
+    
+    // Check 3: Check admins collection
+    const adminDoc = await db.collection('admins').doc(req.user.uid).get();
+    if (adminDoc.exists) {
+      return next();
+    }
+    
+    // Also check by email in admins collection
+    const adminByEmailQuery = await db.collection('admins')
+      .where('email', '==', req.user.email)
+      .limit(1)
+      .get();
+    
+    if (!adminByEmailQuery.empty) {
+      return next();
+    }
+    
+    // Not a moderator or admin
+    return res.status(403).json({ 
+      error: 'Staff access required', 
+      message: 'You need moderator or administrator privileges' 
+    });
+    
+  } catch (error) {
+    console.error('Staff guard error:', error);
+    res.status(500).json({ error: 'Authorization check failed' });
+  }
+};
+
 // Rate limiting for admin actions (5 per minute)
 const rateLimitAdminActions = (req, res, next) => {
   const uid = req.user.uid;
@@ -831,7 +878,11 @@ app.get('/v1/admin/admins', authenticateUser, adminGuard, async (req, res) => {
     res.json({
       success: true,
       data: {
-        admins: admins.sort((a, b) => (a.addedAt || new Date(0)) - (b.addedAt || new Date(0)))
+        admins: admins.sort((a, b) => {
+          const aTime = a.addedAt ? (a.addedAt.toDate ? a.addedAt.toDate().getTime() : a.addedAt.getTime()) : 0;
+          const bTime = b.addedAt ? (b.addedAt.toDate ? b.addedAt.toDate().getTime() : b.addedAt.getTime()) : 0;
+          return aTime - bTime;
+        })
       }
     });
     
@@ -883,8 +934,10 @@ app.post('/v1/admin/admins/promote', authenticateUser, adminGuard, rateLimitAdmi
       });
     }
     
-    // Set Firebase custom claims
-    await admin.auth().setCustomUserClaims(targetUser.uid, { role: 'admin' });
+    // Set Firebase custom claims (preserve existing claims)
+    const existingUser = await admin.auth().getUser(targetUser.uid);
+    const existingClaims = existingUser.customClaims || {};
+    await admin.auth().setCustomUserClaims(targetUser.uid, { ...existingClaims, role: 'admin' });
     
     // Add to admins collection
     const adminData = {
@@ -967,8 +1020,11 @@ app.delete('/v1/admin/admins/:uid', authenticateUser, adminGuard, rateLimitAdmin
       });
     }
     
-    // Remove custom claims
-    await admin.auth().setCustomUserClaims(uid, { role: null });
+    // Remove admin role from custom claims (preserve other claims)
+    const existingUser = await admin.auth().getUser(uid);
+    const existingClaims = existingUser.customClaims || {};
+    const { role, ...remainingClaims } = existingClaims;
+    await admin.auth().setCustomUserClaims(uid, remainingClaims);
     
     // Remove from admins collection
     await db.collection('admins').doc(uid).delete();
@@ -1078,8 +1134,8 @@ app.post('/v1/moderation/report', authenticateUser, async (req, res) => {
   }
 });
 
-// GET /v1/moderation/queue - Moderation queue (admins only)
-app.get('/v1/moderation/queue', authenticateUser, adminGuard, async (req, res) => {
+// GET /v1/moderation/queue - Moderation queue (moderators and admins)
+app.get('/v1/moderation/queue', authenticateUser, staffGuard, async (req, res) => {
   try {
 
     const { status = 'pending', page = '1', limit = '20' } = req.query;
@@ -1137,8 +1193,8 @@ app.get('/v1/moderation/queue', authenticateUser, adminGuard, async (req, res) =
   }
 });
 
-// PUT /v1/moderation/review/:reportId - Review moderation report
-app.put('/v1/moderation/review/:reportId', authenticateUser, adminGuard, async (req, res) => {
+// PUT /v1/moderation/review/:reportId - Review moderation report (moderators and admins)
+app.put('/v1/moderation/review/:reportId', authenticateUser, staffGuard, async (req, res) => {
   try {
 
     const { reportId } = req.params;
