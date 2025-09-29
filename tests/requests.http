@@ -1,0 +1,165 @@
+### Femina Platform API Tests
+### Run these tests to validate all endpoints
+
+@baseUrl = http://localhost:5000
+# For deployed version: @baseUrl = https://feminabackend-alishaparveen1.replit.app
+
+### Health Check
+GET {{baseUrl}}/v1/health
+
+### Create a test user post (requires auth - replace with actual Firebase token)
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "Welcome to Femina! This is a test post about women empowerment in the fun category. 🎉",
+  "category": "fun",
+  "tags": ["test", "welcome", "empowerment"],
+  "isAnonymous": false
+}
+
+### List posts with filters
+GET {{baseUrl}}/v1/posts?category=fun&sortBy=new&timeframe=all&page=1&limit=10
+
+### Get a specific post (replace POST_ID with actual ID from create response)
+GET {{baseUrl}}/v1/posts/POST_ID
+
+### Like a post (requires auth - toggle functionality)
+POST {{baseUrl}}/v1/posts/POST_ID/like
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+### Unlike the same post (toggle again)
+POST {{baseUrl}}/v1/posts/POST_ID/like
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+### Add a comment to the post (requires auth)
+POST {{baseUrl}}/v1/posts/POST_ID/comments
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "Great post! This is exactly what our community needs.",
+  "isAnonymous": false
+}
+
+### List comments for the post
+GET {{baseUrl}}/v1/posts/POST_ID/comments?page=1&limit=10
+
+### Like a comment (requires auth - replace COMMENT_ID)
+POST {{baseUrl}}/v1/posts/POST_ID/comments/COMMENT_ID/like
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+### Report a post (requires auth)
+POST {{baseUrl}}/v1/moderation/report
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "contentId": "POST_ID",
+  "contentType": "post",
+  "reason": "spam",
+  "description": "This appears to be spam content"
+}
+
+### Get moderation queue (requires moderator role)
+GET {{baseUrl}}/v1/moderation/queue?status=pending&page=1&limit=10
+Authorization: Bearer YOUR_MODERATOR_TOKEN_HERE
+
+### Review moderation report (requires moderator role - replace REPORT_ID)
+PUT {{baseUrl}}/v1/moderation/review/REPORT_ID
+Content-Type: application/json
+Authorization: Bearer YOUR_MODERATOR_TOKEN_HERE
+
+{
+  "action": "approve"
+}
+
+### Test different categories
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "Tips for maintaining work-life balance as a working mother",
+  "category": "parenting",
+  "tags": ["balance", "motherhood", "career"]
+}
+
+### Test health category
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "Natural remedies for managing stress during menstruation",
+  "category": "health",
+  "tags": ["health", "wellness", "natural"]
+}
+
+### Test relationships category
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "How to navigate difficult conversations with partners about finances",
+  "category": "relationships",
+  "tags": ["communication", "finances", "partnership"]
+}
+
+### Test career category with anonymous post
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "Dealing with workplace discrimination - need advice",
+  "category": "career",
+  "tags": ["workplace", "discrimination", "advice"],
+  "isAnonymous": true
+}
+
+### List posts by different sort orders
+GET {{baseUrl}}/v1/posts?sortBy=top&timeframe=7d&limit=5
+
+### List posts by different sort orders - most discussed
+GET {{baseUrl}}/v1/posts?sortBy=discussed&timeframe=30d&limit=5
+
+### Test timeframe filters
+GET {{baseUrl}}/v1/posts?timeframe=24h&sortBy=new&limit=10
+
+### Test pagination
+GET {{baseUrl}}/v1/posts?page=2&limit=5
+
+### Test invalid category (should return validation error)
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "This should fail",
+  "category": "invalid_category"
+}
+
+### Test empty content (should return validation error)
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+Authorization: Bearer YOUR_FIREBASE_TOKEN_HERE
+
+{
+  "content": "",
+  "category": "general"
+}
+
+### Test unauthenticated request (should return 401)
+POST {{baseUrl}}/v1/posts
+Content-Type: application/json
+
+{
+  "content": "This should fail without auth",
+  "category": "general"
+}
