@@ -134,7 +134,14 @@ PUT  /v1/moderation/review/:id  - Review reports
 
 ## 🗄️ Required Firestore Indexes
 
-**Critical**: These composite indexes must be created in Firebase Console before production use:
+**Critical**: These composite indexes must be created in Firebase Console before production use.
+
+### Quick Deploy (Recommended)
+```bash
+firebase deploy --only firestore:indexes --project femina-aee4b
+```
+
+The `firestore.indexes.json` file contains all index definitions.
 
 ### Posts Collection Indexes
 ```javascript
