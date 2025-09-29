@@ -29,6 +29,12 @@ app.use(express.urlencoded({ extended: true }));
 // Categories enum for posts
 const CATEGORIES = ['health', 'relationships', 'fitness', 'career', 'fun', 'general', 'parenting', 'lifestyle', 'support'];
 
+// Admin bootstrap emails from environment
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);
+
+// Rate limiting for admin actions
+const adminActionLimits = new Map(); // uid -> { count, resetTime }
+
 // Authentication middleware
 const authenticateUser = async (req, res, next) => {
   try {
@@ -50,7 +56,8 @@ const authenticateUser = async (req, res, next) => {
       name: userData.name || decodedToken.name || 'Anonymous',
       avatarUrl: userData.avatarUrl || decodedToken.picture || null,
       verified: userData.verified || false,
-      role: userData.role || 'user'
+      role: userData.role || 'user',
+      customClaims: decodedToken
     };
     
     next();
@@ -58,6 +65,76 @@ const authenticateUser = async (req, res, next) => {
     console.error('Authentication error:', error);
     res.status(401).json({ error: 'Authentication failed', message: 'Invalid token' });
   }
+};
+
+// Admin guard middleware
+const adminGuard = async (req, res, next) => {
+  try {
+    // Check 1: Firebase custom claims role=admin (primary fast check)
+    if (req.user.customClaims.role === 'admin') {
+      return next();
+    }
+    
+    // Check 2: Bootstrap admin emails
+    if (ADMIN_EMAILS.includes(req.user.email)) {
+      return next();
+    }
+    
+    // Check 3: Check admins collection
+    const adminDoc = await db.collection('admins').doc(req.user.uid).get();
+    if (adminDoc.exists) {
+      return next();
+    }
+    
+    // Also check by email in admins collection
+    const adminByEmailQuery = await db.collection('admins')
+      .where('email', '==', req.user.email)
+      .limit(1)
+      .get();
+    
+    if (!adminByEmailQuery.empty) {
+      return next();
+    }
+    
+    // Not an admin
+    return res.status(403).json({ 
+      error: 'Admin access required', 
+      message: 'You do not have administrator privileges' 
+    });
+    
+  } catch (error) {
+    console.error('Admin guard error:', error);
+    res.status(500).json({ error: 'Authorization check failed' });
+  }
+};
+
+// Rate limiting for admin actions (5 per minute)
+const rateLimitAdminActions = (req, res, next) => {
+  const uid = req.user.uid;
+  const now = Date.now();
+  const minute = 60 * 1000;
+  
+  if (!adminActionLimits.has(uid)) {
+    adminActionLimits.set(uid, { count: 1, resetTime: now + minute });
+    return next();
+  }
+  
+  const userLimit = adminActionLimits.get(uid);
+  if (now > userLimit.resetTime) {
+    // Reset counter
+    adminActionLimits.set(uid, { count: 1, resetTime: now + minute });
+    return next();
+  }
+  
+  if (userLimit.count >= 5) {
+    return res.status(429).json({
+      error: 'Rate limit exceeded',
+      message: 'Too many admin actions. Try again in a minute.'
+    });
+  }
+  
+  userLimit.count++;
+  next();
 };
 
 // Optional auth middleware (continues if no auth provided)
@@ -700,6 +777,226 @@ app.post('/v1/posts/:postId/comments/:commentId/like', authenticateUser, async (
   }
 });
 
+// ========== ADMIN MANAGEMENT API ==========
+
+// Helper function to log admin actions
+const logAdminAction = async (actorUid, action, targetUid = null, targetEmail = null) => {
+  try {
+    await db.collection('adminAudit').add({
+      actorUid,
+      action,
+      targetUid,
+      targetEmail,
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error('Failed to log admin action:', error);
+  }
+};
+
+// GET /v1/admin/admins - List all current admin users
+app.get('/v1/admin/admins', authenticateUser, adminGuard, async (req, res) => {
+  try {
+    const admins = [];
+    
+    // Get all admins from Firestore collection
+    const adminsSnapshot = await db.collection('admins').get();
+    for (const doc of adminsSnapshot.docs) {
+      const adminData = doc.data();
+      admins.push({
+        uid: adminData.uid,
+        email: adminData.email,
+        addedBy: adminData.addedBy,
+        addedAt: adminData.addedAt,
+        role: adminData.role,
+        source: 'collection'
+      });
+    }
+    
+    // Add bootstrap admins if they're not already in the collection
+    for (const email of ADMIN_EMAILS) {
+      const existingAdmin = admins.find(admin => admin.email === email);
+      if (!existingAdmin) {
+        admins.push({
+          uid: null, // Bootstrap admins might not have UIDs
+          email,
+          addedBy: 'system',
+          addedAt: null,
+          role: 'admin',
+          source: 'bootstrap'
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        admins: admins.sort((a, b) => (a.addedAt || new Date(0)) - (b.addedAt || new Date(0)))
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error listing admins:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to list admins',
+      message: error.message
+    });
+  }
+});
+
+// POST /v1/admin/admins/promote - Promote user to admin
+app.post('/v1/admin/admins/promote', authenticateUser, adminGuard, rateLimitAdminActions, async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email',
+        message: 'Valid email address is required'
+      });
+    }
+    
+    // Look up user by email using Firebase Admin SDK
+    let targetUser;
+    try {
+      targetUser = await admin.auth().getUserByEmail(email);
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+          message: 'No user found with this email address'
+        });
+      }
+      throw error;
+    }
+    
+    // Check if already an admin
+    const existingAdmin = await db.collection('admins').doc(targetUser.uid).get();
+    if (existingAdmin.exists || ADMIN_EMAILS.includes(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Already admin',
+        message: 'User is already an administrator'
+      });
+    }
+    
+    // Set Firebase custom claims
+    await admin.auth().setCustomUserClaims(targetUser.uid, { role: 'admin' });
+    
+    // Add to admins collection
+    const adminData = {
+      uid: targetUser.uid,
+      email: targetUser.email,
+      addedBy: req.user.uid,
+      addedAt: new Date(),
+      role: 'admin'
+    };
+    
+    await db.collection('admins').doc(targetUser.uid).set(adminData);
+    
+    // Audit log
+    await logAdminAction(req.user.uid, 'promoteAdmin', targetUser.uid, targetUser.email);
+    
+    res.status(201).json({
+      success: true,
+      message: 'User promoted to admin successfully',
+      data: {
+        uid: targetUser.uid,
+        email: targetUser.email,
+        addedBy: req.user.uid,
+        addedAt: adminData.addedAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error promoting admin:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to promote admin',
+      message: error.message
+    });
+  }
+});
+
+// DELETE /v1/admin/admins/:uid - Remove admin privileges
+app.delete('/v1/admin/admins/:uid', authenticateUser, adminGuard, rateLimitAdminActions, async (req, res) => {
+  try {
+    const { uid } = req.params;
+    
+    if (!uid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid UID',
+        message: 'User UID is required'
+      });
+    }
+    
+    // Prevent self-removal
+    if (uid === req.user.uid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot remove self',
+        message: 'You cannot remove your own admin privileges'
+      });
+    }
+    
+    // Get user info
+    let targetUser;
+    try {
+      targetUser = await admin.auth().getUser(uid);
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+          message: 'No user found with this UID'
+        });
+      }
+      throw error;
+    }
+    
+    // Check if user is a bootstrap admin (cannot be removed)
+    if (ADMIN_EMAILS.includes(targetUser.email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot remove bootstrap admin',
+        message: 'Bootstrap administrators cannot be removed via API'
+      });
+    }
+    
+    // Remove custom claims
+    await admin.auth().setCustomUserClaims(uid, { role: null });
+    
+    // Remove from admins collection
+    await db.collection('admins').doc(uid).delete();
+    
+    // Audit log
+    await logAdminAction(req.user.uid, 'removeAdmin', uid, targetUser.email);
+    
+    res.json({
+      success: true,
+      message: 'Admin privileges removed successfully',
+      data: {
+        uid: uid,
+        email: targetUser.email,
+        removedBy: req.user.uid,
+        removedAt: new Date()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error removing admin:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to remove admin',
+      message: error.message
+    });
+  }
+});
+
 // ========== MODERATION API ==========
 
 // POST /v1/moderation/report - Report content
@@ -781,15 +1078,9 @@ app.post('/v1/moderation/report', authenticateUser, async (req, res) => {
   }
 });
 
-// GET /v1/moderation/queue - Moderation queue (moderators only)
-app.get('/v1/moderation/queue', authenticateUser, async (req, res) => {
+// GET /v1/moderation/queue - Moderation queue (admins only)
+app.get('/v1/moderation/queue', authenticateUser, adminGuard, async (req, res) => {
   try {
-    if (req.user.role !== 'moderator' && req.user.role !== 'admin') {
-      return res.status(403).json({
-        error: 'Access denied',
-        message: 'Moderator access required'
-      });
-    }
 
     const { status = 'pending', page = '1', limit = '20' } = req.query;
     const pageNum = parseInt(page, 10);
@@ -847,14 +1138,8 @@ app.get('/v1/moderation/queue', authenticateUser, async (req, res) => {
 });
 
 // PUT /v1/moderation/review/:reportId - Review moderation report
-app.put('/v1/moderation/review/:reportId', authenticateUser, async (req, res) => {
+app.put('/v1/moderation/review/:reportId', authenticateUser, adminGuard, async (req, res) => {
   try {
-    if (req.user.role !== 'moderator' && req.user.role !== 'admin') {
-      return res.status(403).json({
-        error: 'Access denied',
-        message: 'Moderator access required'
-      });
-    }
 
     const { reportId } = req.params;
     const { action } = req.body;
