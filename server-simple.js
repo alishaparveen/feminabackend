@@ -27,7 +27,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Categories enum for posts
-const CATEGORIES = ['health', 'relationships', 'fitness', 'career', 'fun', 'general', 'parenting', 'lifestyle', 'support'];
+const CATEGORIES = ['general','health','relationships','fitness','career','fun','parenting','lifestyle','support'];
 
 // Admin bootstrap emails from environment
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean);
@@ -233,6 +233,11 @@ app.get('/', (req, res) => {
 // GET /v1/posts - List posts with filters and sorting
 app.get('/v1/posts', optionalAuth, async (req, res) => {
   try {
+    // Normalize category filter
+    if (req.query.category) {
+      req.query.category = String(req.query.category).toLowerCase().trim();
+    }
+
     const {
       category,
       sortBy = 'new',
@@ -396,6 +401,12 @@ app.get('/v1/posts', optionalAuth, async (req, res) => {
 // POST /v1/posts - Create new post
 app.post('/v1/posts', authenticateUser, async (req, res) => {
   try {
+    // Normalize
+    req.body.category = String(req.body.category || '').toLowerCase().trim();
+    // Defaults
+    if (!Array.isArray(req.body.tags)) req.body.tags = [];
+    if (!Array.isArray(req.body.images)) req.body.images = [];
+
     const {
       content,
       category = 'general',
@@ -413,6 +424,7 @@ app.post('/v1/posts', authenticateUser, async (req, res) => {
     }
 
     if (!CATEGORIES.includes(category)) {
+      console.warn('[createPost] invalid category:', req.body.category);
       return res.status(400).json({
         error: 'Validation failed',
         message: `Invalid category. Must be one of: ${CATEGORIES.join(', ')}`
