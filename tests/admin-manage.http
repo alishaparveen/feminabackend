@@ -1,0 +1,106 @@
+### Femina Platform - Admin Management API Tests
+### Test admin promotion, listing, and removal functionality
+
+# Variables - Replace with actual values for testing
+@baseUrl = http://localhost:5000
+@adminToken = your_admin_firebase_jwt_token_here
+@testUserEmail = test@example.com
+
+### Health Check (no auth required)
+GET {{baseUrl}}/v1/health
+
+### ========== ADMIN TESTS (Require Bootstrap Admin Token) ==========
+
+### 1. List Current Admins
+GET {{baseUrl}}/v1/admin/admins
+Authorization: Bearer {{adminToken}}
+
+### 2. Promote User to Admin (requires valid user email that exists in Firebase Auth)
+POST {{baseUrl}}/v1/admin/admins/promote
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "{{testUserEmail}}"
+}
+
+### 3. List Admins Again (should now include the promoted user)
+GET {{baseUrl}}/v1/admin/admins
+Authorization: Bearer {{adminToken}}
+
+### 4. Test that new admin can access admin endpoints (using new admin's token)
+# Note: You would need the new admin's JWT token for this test
+GET {{baseUrl}}/v1/moderation/queue
+Authorization: Bearer {{adminToken}}
+
+### 5. Remove Admin (using original admin token and new admin's UID)
+# Replace 'new_admin_uid_here' with the actual UID from step 2 response
+DELETE {{baseUrl}}/v1/admin/admins/new_admin_uid_here
+Authorization: Bearer {{adminToken}}
+
+### 6. Verify Admin Removed (should no longer appear in list)
+GET {{baseUrl}}/v1/admin/admins
+Authorization: Bearer {{adminToken}}
+
+### ========== ERROR CASES ==========
+
+### Test Non-Admin Access (should return 403)
+GET {{baseUrl}}/v1/admin/admins
+Authorization: Bearer invalid_or_non_admin_token
+
+### Test Invalid Email Promotion
+POST {{baseUrl}}/v1/admin/admins/promote
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "nonexistent@invalid.domain"
+}
+
+### Test Rate Limiting (run this 6 times quickly)
+POST {{baseUrl}}/v1/admin/admins/promote
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "email": "rate.limit.test@example.com"
+}
+
+### Test Self-Removal Prevention
+DELETE {{baseUrl}}/v1/admin/admins/your_own_uid_here
+Authorization: Bearer {{adminToken}}
+
+### Test Bootstrap Admin Removal (should fail)
+DELETE {{baseUrl}}/v1/admin/admins/bootstrap_admin_uid
+Authorization: Bearer {{adminToken}}
+
+### ========== INTEGRATION TESTS ==========
+
+### Verify Bootstrap Admin Access (using bootstrap email token)
+GET {{baseUrl}}/v1/admin/admins
+Authorization: Bearer {{adminToken}}
+
+### Test Moderation Queue Access (admin only)
+GET {{baseUrl}}/v1/moderation/queue
+Authorization: Bearer {{adminToken}}
+
+### Test Admin Action Audit Trail
+# Check that admin actions are logged in adminAudit collection
+# This would need to be verified via Firebase Console or additional endpoint
+
+### ========== USAGE NOTES ==========
+# 
+# 1. Replace {{adminToken}} with a valid Firebase JWT token from a bootstrap admin
+# 2. Replace {{testUserEmail}} with an email of a user that exists in Firebase Auth
+# 3. After promoting a user, use their JWT token to test admin access
+# 4. Make sure the test user email is not already an admin
+# 5. For bootstrap admin testing, use an email from ADMIN_EMAILS env var
+# 
+# Expected Results:
+# - Bootstrap admins can access all admin endpoints
+# - Promoted users get immediate admin access (custom claims)
+# - Removed admins lose access immediately
+# - Rate limiting prevents abuse (5 actions per minute)
+# - Audit trail records all admin actions
+# - Self-removal and bootstrap admin removal are prevented
+#
