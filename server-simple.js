@@ -227,6 +227,40 @@ app.get('/v1/posts', optionalAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching posts:', error);
+    
+    // Handle empty collection gracefully and index errors
+    if (error.code === 5 || error.message.includes('NOT_FOUND')) {
+      const pageNum = parseInt(req.query.page || '1', 10);
+      return res.json({
+        success: true,
+        data: {
+          posts: [],
+          pagination: {
+            currentPage: pageNum,
+            hasMore: false,
+            totalShown: 0
+          }
+        }
+      });
+    }
+    
+    // Handle missing Firestore indexes
+    if (error.code === 9 || error.message.includes('FAILED_PRECONDITION')) {
+      const pageNum = parseInt(req.query.page || '1', 10);
+      return res.json({
+        success: true,
+        data: {
+          posts: [],
+          pagination: {
+            currentPage: pageNum,
+            hasMore: false,
+            totalShown: 0
+          }
+        },
+        warning: 'Database indexes need to be created. See IMPLEMENTATION_REPORT.md for details.'
+      });
+    }
+    
     res.status(500).json({
       success: false,
       error: 'Failed to fetch posts',
@@ -404,7 +438,7 @@ app.get('/v1/posts/:id', optionalAuth, async (req, res) => {
       
       const viewDoc = await viewRef.get();
       if (!viewDoc.exists) {
-        // Record view and increment counter
+        // Record view and increment counter atomically
         await db.runTransaction(async (transaction) => {
           transaction.set(viewRef, {
             userId,
@@ -412,10 +446,12 @@ app.get('/v1/posts/:id', optionalAuth, async (req, res) => {
             bucket
           });
           transaction.update(db.collection('posts').doc(postId), {
-            views: (post.views || 0) + 1
+            views: admin.firestore.FieldValue.increment(1)
           });
         });
-        post.views = (post.views || 0) + 1;
+        // Refresh post data to get updated view count
+        const updatedPost = await db.collection('posts').doc(postId).get();
+        post.views = updatedPost.data().views;
       }
     }
 
@@ -470,9 +506,10 @@ app.get('/v1/posts/:postId/comments', optionalAuth, async (req, res) => {
     const limitNum = Math.min(parseInt(limit, 10), 50);
     const offset = (pageNum - 1) * limitNum;
 
-    // Get comments (newest first)
+    // Get comments (newest first) - only approved comments
     const query = db.collection('posts').doc(postId)
       .collection('comments')
+      .where('moderationStatus', '==', 'approved')
       .orderBy('createdAt', 'desc')
       .offset(offset)
       .limit(limitNum + 1);
@@ -567,16 +604,17 @@ app.post('/v1/posts/:postId/comments', authenticateUser, async (req, res) => {
       authorId: req.user.uid,
       isAnonymous: Boolean(isAnonymous),
       createdAt: now,
-      likes: 0
+      likes: 0,
+      moderationStatus: 'approved' // Set default moderation status
     };
 
-    // Use transaction to create comment and increment post comment count
+    // Use transaction to create comment and increment post comment count atomically
     const result = await db.runTransaction(async (transaction) => {
       const commentRef = db.collection('posts').doc(postId).collection('comments').doc();
       
       transaction.set(commentRef, commentData);
       transaction.update(postRef, {
-        comments: (postDoc.data().comments || 0) + 1,
+        comments: admin.firestore.FieldValue.increment(1),
         updatedAt: now
       });
 
@@ -706,7 +744,7 @@ app.post('/v1/moderation/report', authenticateUser, async (req, res) => {
       });
     }
 
-    // Create report
+    // Create report with postId for comment moderation
     const reportData = {
       contentId,
       contentType,
@@ -718,7 +756,9 @@ app.post('/v1/moderation/report', authenticateUser, async (req, res) => {
       createdAt: new Date(),
       reviewedAt: null,
       reviewedBy: null,
-      action: null
+      action: null,
+      // For comments, extract postId from the route context if available
+      postId: contentType === 'comment' ? req.body.postId || null : null
     };
 
     const reportRef = await db.collection('moderationReports').add(reportData);
@@ -853,9 +893,17 @@ app.put('/v1/moderation/review/:reportId', authenticateUser, async (req, res) =>
             updatedAt: new Date()
           });
         } else if (reportData.contentType === 'comment') {
-          // Comments need to be handled differently - find parent post
-          // For now, just mark as removed - you'd need to store parent post ID in report
-          // This is a simplified implementation
+          // For comments, we need to parse the contentId to get post and comment IDs
+          // Format expected: "postId/comments/commentId" or store separately
+          // For now, mark comment as removed (requires postId to be stored in report)
+          if (reportData.postId) {
+            const commentRef = db.collection('posts').doc(reportData.postId)
+              .collection('comments').doc(reportData.contentId);
+            transaction.update(commentRef, {
+              moderationStatus: 'removed',
+              updatedAt: new Date()
+            });
+          }
         }
       }
     });
