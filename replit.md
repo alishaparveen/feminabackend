@@ -18,7 +18,9 @@ The platform uses Firebase Cloud Functions with TypeScript as the primary server
 ### Database Architecture
 Firestore (NoSQL document database) serves as the primary data store, chosen for its real-time capabilities and seamless Firebase integration. The database handles user profiles, community posts, stories (with text/audio/image content), expert consultations, marketplace products, and chat interactions. Document-based storage allows for flexible schema evolution and efficient querying of hierarchical data structures.
 
-**Stories Collection**: Supports rich media storytelling with text, images, and audio content. Features include likes, saves, follows, view tracking, moderation workflows, and privacy controls (public/draft visibility).
+**Stories Collection**: Supports rich media storytelling with text, images, and audio content. Features include category/subCategory organization, likes, saves, follows, view tracking, moderation workflows, and privacy controls (public/draft visibility). Each story is categorized (Health, Career, Relationships, Parenting, Finance, Lifestyle, Education, Support, or Uncategorized) with optional subcategories for more granular organization.
+
+**Category Counting**: Denormalized category counts are maintained in meta/storyCategoryCounts document for fast topic count retrieval. Counts are updated transactionally on story create, delete, and category changes using Firestore FieldValue.increment() for eventual consistency.
 
 ### Authentication & Authorization
 Firebase Authentication handles user identity management with custom role-based access control (RBAC). The system supports multiple user roles: user, expert, moderator, and admin. JWT tokens are verified through middleware, with additional user metadata stored in Firestore for role and permission management.
