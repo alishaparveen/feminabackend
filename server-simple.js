@@ -1279,6 +1279,12 @@ app.put('/v1/moderation/review/:reportId', authenticateUser, staffGuard, async (
   }
 });
 
+// ========== TOPICS API ==========
+const topicsController = require('./controllers/topicsController');
+
+app.get('/v1/topics', topicsController.getTopics);
+app.get('/v1/topics/counts', topicsController.getCategoryCounts);
+
 // ========== STORIES API ==========
 const storiesController = require('./controllers/storiesController');
 const { upload, uploadImageToStorage, uploadAudioToStorage } = require('./middleware/upload');
