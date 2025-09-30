@@ -3,7 +3,7 @@ const db = admin.firestore();
 
 const createStory = async (req, res) => {
   try {
-    const { title, excerpt, content, tags = [], imageUrl = null, audioUrl = null, audioDuration = 0, visibility = 'public' } = req.body;
+    const { title, excerpt, content, tags = [], category = 'Uncategorized', subCategory = null, imageUrl = null, audioUrl = null, audioDuration = 0, visibility = 'public' } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({
@@ -18,6 +18,8 @@ const createStory = async (req, res) => {
       excerpt: excerpt ? excerpt.trim() : content.substring(0, 150) + '...',
       content,
       tags: Array.isArray(tags) ? tags.map(tag => tag.toLowerCase().trim()) : [],
+      category: category || 'Uncategorized',
+      subCategory: subCategory || null,
       authorId: req.user.uid,
       authorName: req.user.name,
       authorAvatar: req.user.avatarUrl,
@@ -38,6 +40,19 @@ const createStory = async (req, res) => {
     };
 
     const storyRef = await db.collection('stories').add(storyData);
+
+    await db.runTransaction(async (transaction) => {
+      const metaRef = db.collection('meta').doc('storyCategoryCounts');
+      const metaDoc = await transaction.get(metaRef);
+      
+      if (!metaDoc.exists) {
+        transaction.set(metaRef, { [storyData.category]: 1 });
+      } else {
+        transaction.update(metaRef, {
+          [storyData.category]: admin.firestore.FieldValue.increment(1)
+        });
+      }
+    });
     const newStory = await storyRef.get();
     const data = newStory.data();
 
@@ -50,6 +65,8 @@ const createStory = async (req, res) => {
           excerpt: data.excerpt,
           content: data.content,
           tags: data.tags,
+          category: data.category,
+          subCategory: data.subCategory,
           authorId: data.authorId,
           authorName: data.authorName,
           authorAvatar: data.authorAvatar,
@@ -83,6 +100,8 @@ const getStories = async (req, res) => {
     const { 
       q = '', 
       tags = '', 
+      category = '',
+      subCategory = '',
       authorId = '', 
       type = 'public',
       sort = 'newest', 
@@ -98,6 +117,14 @@ const getStories = async (req, res) => {
 
     const isStaff = req.user && (req.user.role === 'moderator' || req.user.role === 'admin');
     const isOwnStories = authorId && req.user && authorId === req.user.uid;
+
+    if (category) {
+      query = query.where('category', '==', category);
+    }
+
+    if (subCategory) {
+      query = query.where('subCategory', '==', subCategory);
+    }
 
     if (authorId) {
       query = query.where('authorId', '==', authorId);
@@ -144,6 +171,8 @@ const getStories = async (req, res) => {
         excerpt: data.excerpt,
         content: data.content,
         tags: data.tags,
+        category: data.category,
+        subCategory: data.subCategory,
         authorId: data.authorId,
         authorName: data.authorName,
         authorAvatar: data.authorAvatar,
@@ -225,6 +254,8 @@ const getStoryById = async (req, res) => {
       excerpt: storyData.excerpt,
       content: storyData.content,
       tags: storyData.tags,
+      category: storyData.category,
+      subCategory: storyData.subCategory,
       authorId: storyData.authorId,
       authorName: storyData.authorName,
       authorAvatar: storyData.authorAvatar,
@@ -288,7 +319,7 @@ const updateStory = async (req, res) => {
       });
     }
 
-    const { title, excerpt, content, tags, imageUrl, audioUrl, audioDuration, visibility } = req.body;
+    const { title, excerpt, content, tags, category, subCategory, imageUrl, audioUrl, audioDuration, visibility } = req.body;
 
     const updateData = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -298,6 +329,8 @@ const updateStory = async (req, res) => {
     if (excerpt !== undefined) updateData.excerpt = excerpt.trim();
     if (content !== undefined) updateData.content = content;
     if (tags !== undefined) updateData.tags = Array.isArray(tags) ? tags.map(tag => tag.toLowerCase().trim()) : [];
+    if (category !== undefined) updateData.category = category;
+    if (subCategory !== undefined) updateData.subCategory = subCategory;
     if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
     if (audioUrl !== undefined) updateData.audioUrl = audioUrl;
     if (audioDuration !== undefined) updateData.audioDuration = audioDuration;
@@ -317,6 +350,8 @@ const updateStory = async (req, res) => {
           excerpt: data.excerpt,
           content: data.content,
           tags: data.tags,
+          category: data.category,
+          subCategory: data.subCategory,
           authorId: data.authorId,
           authorName: data.authorName,
           authorAvatar: data.authorAvatar,
@@ -368,7 +403,23 @@ const deleteStory = async (req, res) => {
       });
     }
 
+    const categoryToDecrement = storyData.category || 'Uncategorized';
+
     await db.collection('stories').doc(id).delete();
+
+    await db.runTransaction(async (transaction) => {
+      const metaRef = db.collection('meta').doc('storyCategoryCounts');
+      const metaDoc = await transaction.get(metaRef);
+      
+      if (metaDoc.exists) {
+        const currentCount = metaDoc.data()[categoryToDecrement] || 0;
+        if (currentCount > 0) {
+          transaction.update(metaRef, {
+            [categoryToDecrement]: admin.firestore.FieldValue.increment(-1)
+          });
+        }
+      }
+    });
 
     res.json({
       success: true,
@@ -820,6 +871,8 @@ const getUserStories = async (req, res) => {
         excerpt: data.excerpt,
         content: data.content,
         tags: data.tags,
+        category: data.category,
+        subCategory: data.subCategory,
         authorId: data.authorId,
         authorName: data.authorName,
         authorAvatar: data.authorAvatar,

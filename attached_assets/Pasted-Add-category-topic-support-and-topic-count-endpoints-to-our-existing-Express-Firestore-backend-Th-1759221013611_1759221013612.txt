@@ -1,0 +1,136 @@
+Add category/topic support and topic-count endpoints to our existing Express + Firestore backend. The project already uses Firebase Admin SDK and has routes/controllers structure. Implement the following features, files, and tests so the frontend can render the left-sidebar topics, show counts, and query stories by category/subCategory while keeping existing functionality (tags, tabs: All/Top/Saved/Following).
+
+Goals
+
+Add category and subCategory fields to stories (schema).
+
+Update story create/update endpoints to accept category/subCategory.
+
+Add new endpoints:
+
+GET /api/topics → returns categories with subcategories (optionally include counts).
+
+GET /api/topics/counts → returns denormalized counts per category (fast).
+
+Maintain meta/storyCategoryCounts doc with up-to-date counts via transaction on create/delete and Cloud Function trigger alternative.
+
+Update GET /api/stories to support category & subCategory filters and combine with existing filters (tags, search, tab, sort, pagination).
+
+Provide a one-time migration script scripts/migrateAddCategory.js to backfill category for existing docs (with simple heuristics from tags or default).
+
+Add required Firestore index note for category + createdAt (and update firestore.indexes.json if present).
+
+Add Jest tests that exercise: create story with category (counts updated), GET /api/topics returns counts, and GET /api/stories?category=... returns filtered list.
+
+Files to create/update
+1) /routes/topics.js
+
+Add Express routes:
+
+GET /api/topics → topicsController.getTopics
+
+GET /api/topics/counts → topicsController.getCategoryCounts
+
+2) /controllers/topicsController.js
+
+Implement getTopics(req,res):
+
+If includeCounts=true in query, return categories with counts from meta/storyCategoryCounts if exists; otherwise compute and return.
+
+Prefer reading a topics collection if it exists (use it if present).
+
+Response shape:
+
+{
+  "topics": [
+    { "category": "Health", "subCategories": ["Mental Health","PCOS"], "count": 12 },
+    ...
+  ]
+}
+
+
+Implement getCategoryCounts(req,res):
+
+Read meta/storyCategoryCounts doc and return { counts: { Health: 12, Career: 8 } }.
+
+If meta missing, compute counts on-the-fly.
+
+3) Update /controllers/storiesController.js
+
+In createStory and updateStory:
+
+accept category & subCategory from request body and save into story doc.
+
+After successful create: run a transaction to increment meta/storyCategoryCounts.{category} by 1.
+
+After delete: decrement the count similarly (or use Cloud Function to sync).
+
+In getStories:
+
+support query params: category, subCategory.
+
+When category present, apply ref = ref.where('category','==', category).
+
+Keep existing logic for tags, q, sort (support sort=top => trendingScore, newest => createdAt), pagination via cursor or page+limit.
+
+Ensure all queries use indexes (note: add category+createdAt to indexes JSON).
+
+4) /scripts/migrateAddCategory.js
+
+A one-time script using Firebase Admin:
+
+Fetch all docs from stories collection (paginated if large).
+
+For each doc without category, infer from tags:
+
+Map heuristics, e.g.: if tags includes [pcos, fertility, pregnancy] → category Health.
+
+if tags includes [career, work, resume, raise] → category Career.
+
+if tags includes [finance, investing, budget] → category Finance.
+
+else set category: 'Uncategorized'.
+
+Batch update documents (use batches of 500).
+
+Also update meta/storyCategoryCounts by recomputing totals once migration finishes.
+
+5) Firestore index update
+
+If firestore.indexes.json exists in repo, append:
+
+{
+  "collectionGroup": "stories",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "category", "order": "ASCENDING" },
+    { "fieldPath": "createdAt", "order": "DESCENDING" }
+  ]
+}
+
+
+Add a note in README or commit message explaining firebase deploy --only firestore:indexes.
+
+6) Tests
+
+Create tests under /tests/topics.test.js (Jest + Firebase emulator or mock admin):
+
+Test creating a story with category: 'Health' increases meta/storyCategoryCounts.Health.
+
+Test GET /api/topics?includeCounts=true returns the category and count.
+
+Test GET /api/stories?category=Health returns only stories with that category.
+
+Implementation details & hints for Replit AI
+
+Use Firebase Admin SDK: const admin = require('firebase-admin'); const db = admin.firestore();
+
+Use FieldValue.increment(1) inside transactions or db.runTransaction to safely increment/decrement counters.
+
+For counting performance, prefer to write meta/storyCategoryCounts doc and update it in create/delete transactions (example below).
+
+Keep denormalized authorName and authorAvatar inside story documents for faster reads (existing pattern).
+
+Ensure createStory checks req.user.uid (already present via auth middleware). Only authors can update/delete their stories.
+
+For safety, wrap batch updates in try/catch and provide verbose logging.
