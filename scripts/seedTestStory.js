@@ -28,6 +28,12 @@ async function seedTestStory() {
       subCategory: 'E2E',
       tags: ['test', 'e2e'],
       authorId: user.uid,
+      visibility: 'public',
+      moderation: {
+        status: 'approved',
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reviewedBy: 'system'
+      },
       audioStatus: 'none',
       audioUrl: null,
       audioPath: null,
