@@ -54,6 +54,42 @@ Automated content moderation uses AI-powered analysis combined with human review
 - Story comment counts automatically updated when comments are approved
 - Protected by requireModerator middleware (checks moderator customClaim or moderators collection)
 
+### Audio Pipeline
+Google Cloud audio services power Stories audio generation and transcription capabilities. The system supports both Text-to-Speech (TTS) synthesis and Speech-to-Text (STT) transcription with comprehensive format support.
+
+**Text-to-Speech (TTS)**: Converts story text to natural-sounding audio using Google Cloud TTS. Supports multiple voices and generates audio in MP3 or OGG format. Users can generate audio from full story text or excerpt (first 5000 characters). Audio metadata (duration, encoding, URL) is stored in the story document.
+
+**Speech-to-Text (STT)**: Transcribes uploaded audio to text using Google Cloud STT. Supports multiple audio formats (mp3, webm, ogg, opus, wav, flac) with automatic sample rate detection. Long-running transcription jobs are tracked via Firestore, with a background poller checking job completion every 30 seconds. Transcripts include confidence scores and are stored in the story document.
+
+**Audio Upload Workflows**:
+1. Direct upload: Upload audio file, system stores it and automatically starts transcription
+2. Signed URL: System generates pre-signed upload URL, client uploads directly to Firebase Storage, then manually triggers transcription
+
+**Audio Metadata (Stories Collection)**:
+- audioUrl, audioPath, audioEncoding (MP3, WEBM_OPUS, OGG_OPUS, LINEAR16, FLAC)
+- audioStatus: none/pending_upload/processing/ready/failed
+- audioDuration: Calculated duration in seconds
+- transcript: Generated transcription text
+- transcriptStatus: none/processing/completed/failed
+- transcriptionConfidence: STT confidence score
+- transcriptionJobId: Google Cloud operation ID for tracking
+- ttsTaskId: TTS generation task identifier
+
+**Audio API Endpoints** (routes/audio.js):
+- POST /api/upload/:storyId - Upload audio or request signed URL (author-only)
+- POST /api/stories/:id/generate-audio - Generate TTS audio from story text (author-only)
+- POST /api/stories/:id/transcribe - Start transcription of uploaded audio (author-only)
+- GET /api/stories/:id/audio-status - Get audio and transcription status (public)
+- POST /api/stories/:id/regenerate-audio - Regenerate TTS audio (author-only)
+- POST /api/transcription/webhook - Internal webhook for async transcription completion
+
+**Audio Services**:
+- services/tts.google.js: TTS synthesis with voice/format options, 5000 character limit, duration estimation
+- services/stt.google.js: Short and long-running transcription with job status polling
+- services/storageHelper.js: Firebase Storage operations including uploads, signed URLs, file management
+
+**Background Worker**: workers/transcriptionPoller.js runs every 30 seconds to poll Google Cloud for transcription job completion, updating Firestore with results when ready. Requires Firestore composite index (transcriptStatus/transcriptionJobId) deployed for efficient queries.
+
 ## External Dependencies
 
 ### Google Services
@@ -63,6 +99,8 @@ Automated content moderation uses AI-powered analysis combined with human review
 - **Firebase Authentication**: User identity and authentication management
 - **Google Generative AI (Gemini)**: AI assistant and content moderation capabilities
 - **Perspective API**: Automatic comment toxicity analysis and moderation
+- **Google Cloud Text-to-Speech**: AI-powered voice synthesis for generating audio from story text
+- **Google Cloud Speech-to-Text**: Automatic transcription of uploaded story audio to text
 
 ### Payment Processing
 - **Stripe**: Complete payment processing platform for consultations, marketplace transactions, and subscription management
