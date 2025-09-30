@@ -38,7 +38,6 @@ const categoryMappings = {
   'family': 'Relationships',
   'friendship': 'Relationships',
   'parenting': 'Parenting',
-  'pregnancy': 'Parenting',
   'baby': 'Parenting',
   'kids': 'Parenting',
   'children': 'Parenting',
@@ -83,7 +82,7 @@ async function migrateStories() {
     const categoryCounts = {};
 
     while (true) {
-      let query = storiesRef.limit(batchSize);
+      let query = storiesRef.orderBy('__name__').limit(batchSize);
       if (lastDoc) {
         query = query.startAfter(lastDoc);
       }
@@ -132,7 +131,7 @@ async function migrateStories() {
     }
 
     console.log('\n📊 Updating category counts in meta collection...');
-    await db.collection('meta').doc('storyCategoryCounts').set(categoryCounts, { merge: true });
+    await db.collection('meta').doc('storyCategoryCounts').set(categoryCounts);
 
     console.log('\n✨ Migration complete!');
     console.log(`   Total processed: ${processedCount}`);

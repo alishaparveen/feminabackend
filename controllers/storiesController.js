@@ -41,18 +41,22 @@ const createStory = async (req, res) => {
 
     const storyRef = await db.collection('stories').add(storyData);
 
-    await db.runTransaction(async (transaction) => {
-      const metaRef = db.collection('meta').doc('storyCategoryCounts');
-      const metaDoc = await transaction.get(metaRef);
-      
-      if (!metaDoc.exists) {
-        transaction.set(metaRef, { [storyData.category]: 1 });
-      } else {
-        transaction.update(metaRef, {
-          [storyData.category]: admin.firestore.FieldValue.increment(1)
-        });
-      }
-    });
+    try {
+      await db.runTransaction(async (transaction) => {
+        const metaRef = db.collection('meta').doc('storyCategoryCounts');
+        const metaDoc = await transaction.get(metaRef);
+        
+        if (!metaDoc.exists) {
+          transaction.set(metaRef, { [storyData.category]: 1 });
+        } else {
+          transaction.update(metaRef, {
+            [storyData.category]: admin.firestore.FieldValue.increment(1)
+          });
+        }
+      });
+    } catch (counterError) {
+      console.error('Failed to update category count, but story was created:', counterError);
+    }
     const newStory = await storyRef.get();
     const data = newStory.data();
 
@@ -336,7 +340,35 @@ const updateStory = async (req, res) => {
     if (audioDuration !== undefined) updateData.audioDuration = audioDuration;
     if (visibility !== undefined) updateData.visibility = visibility;
 
+    const oldCategory = storyData.category || 'Uncategorized';
+    const newCategory = category || oldCategory;
+
     await db.collection('stories').doc(id).update(updateData);
+
+    if (category !== undefined && newCategory !== oldCategory) {
+      try {
+        await db.runTransaction(async (transaction) => {
+          const metaRef = db.collection('meta').doc('storyCategoryCounts');
+          const metaDoc = await transaction.get(metaRef);
+          
+          if (metaDoc.exists) {
+            const counts = metaDoc.data();
+            const oldCount = counts[oldCategory] || 0;
+            const newCount = counts[newCategory] || 0;
+
+            const updates = {};
+            if (oldCount > 0) {
+              updates[oldCategory] = admin.firestore.FieldValue.increment(-1);
+            }
+            updates[newCategory] = admin.firestore.FieldValue.increment(1);
+
+            transaction.update(metaRef, updates);
+          }
+        });
+      } catch (counterError) {
+        console.error('Failed to update category counts on re-categorization:', counterError);
+      }
+    }
 
     const updatedDoc = await db.collection('stories').doc(id).get();
     const data = updatedDoc.data();
@@ -407,19 +439,23 @@ const deleteStory = async (req, res) => {
 
     await db.collection('stories').doc(id).delete();
 
-    await db.runTransaction(async (transaction) => {
-      const metaRef = db.collection('meta').doc('storyCategoryCounts');
-      const metaDoc = await transaction.get(metaRef);
-      
-      if (metaDoc.exists) {
-        const currentCount = metaDoc.data()[categoryToDecrement] || 0;
-        if (currentCount > 0) {
-          transaction.update(metaRef, {
-            [categoryToDecrement]: admin.firestore.FieldValue.increment(-1)
-          });
+    try {
+      await db.runTransaction(async (transaction) => {
+        const metaRef = db.collection('meta').doc('storyCategoryCounts');
+        const metaDoc = await transaction.get(metaRef);
+        
+        if (metaDoc.exists) {
+          const currentCount = metaDoc.data()[categoryToDecrement] || 0;
+          if (currentCount > 0) {
+            transaction.update(metaRef, {
+              [categoryToDecrement]: admin.firestore.FieldValue.increment(-1)
+            });
+          }
         }
-      }
-    });
+      });
+    } catch (counterError) {
+      console.error('Failed to update category count, but story was deleted:', counterError);
+    }
 
     res.json({
       success: true,
