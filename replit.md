@@ -26,7 +26,9 @@ Firestore (NoSQL document database) serves as the primary data store, chosen for
 Firebase Authentication handles user identity management with custom role-based access control (RBAC). The system supports multiple user roles: user, expert, moderator, and admin. JWT tokens are verified through middleware, with additional user metadata stored in Firestore for role and permission management.
 
 ### AI Integration
-Google's Gemini AI (gemini-1.5-flash model) powers the platform's AI assistant functionality. The system provides category-specific guidance (health, career, relationships, parenting, fitness) with tailored prompts for each domain. AI moderation is implemented for content safety and community guidelines enforcement.
+Google's Gemini AI (gemini-1.5-flash model) powers the platform's AI assistant functionality. The system provides category-specific guidance (health, career, relationships, parenting, fitness) with tailored prompts for each domain.
+
+**Perspective API**: Google's Perspective API provides automatic comment moderation by analyzing text for toxicity, threats, insults, profanity, identity attacks, and severe toxicity. Comments with scores above 0.7 threshold are automatically flagged and hidden from public view, requiring moderator review. The system maintains both legacy (moderationStatus) and enriched (moderation.status, scores, reasons) fields for backward compatibility and comprehensive audit trails.
 
 ### File Storage
 Firebase Storage handles all file uploads including profile images, post attachments, story images, story audio, product images, and documents. The system uses Multer middleware for file processing, with image size limits (5MB) and audio limits (20MB). Files are organized by user and purpose with automatic public URL generation for media delivery.
@@ -60,6 +62,7 @@ Automated content moderation uses AI-powered analysis combined with human review
 - **Firebase Storage**: Cloud storage for files and media
 - **Firebase Authentication**: User identity and authentication management
 - **Google Generative AI (Gemini)**: AI assistant and content moderation capabilities
+- **Perspective API**: Automatic comment toxicity analysis and moderation
 
 ### Payment Processing
 - **Stripe**: Complete payment processing platform for consultations, marketplace transactions, and subscription management
