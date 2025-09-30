@@ -20,6 +20,11 @@ if (!admin.apps.length && serviceAccount.project_id) {
 
 const db = admin.firestore();
 
+const perspectiveApi = require('./services/perspectiveApi');
+perspectiveApi.initializePerspectiveClient().catch(err => {
+  console.error('Failed to initialize Perspective API:', err);
+});
+
 const app = express();
 
 // Basic middleware
@@ -735,14 +740,27 @@ app.post('/v1/posts/:postId/comments', authenticateUser, async (req, res) => {
       });
     }
 
+    const perspectiveApi = require('./services/perspectiveApi');
+    const moderationAnalysis = await perspectiveApi.analyzeCommentWithMultipleAttributes(content.trim());
+
     const now = new Date();
+    const isFlagged = moderationAnalysis.flagged;
     const commentData = {
       content: content.trim(),
       authorId: req.user.uid,
       isAnonymous: Boolean(isAnonymous),
       createdAt: now,
       likes: 0,
-      moderationStatus: 'approved' // Set default moderation status
+      approved: !isFlagged,
+      visibility: isFlagged ? 'hidden' : 'public',
+      moderationStatus: isFlagged ? 'flagged' : 'approved',
+      moderation: {
+        status: isFlagged ? 'flagged' : 'approved',
+        analysis: moderationAnalysis.scores,
+        highestScore: moderationAnalysis.highestScore,
+        reasons: moderationAnalysis.reasons,
+        analyzedAt: now
+      }
     };
 
     // Use transaction to create comment and increment post comment count atomically
@@ -750,10 +768,13 @@ app.post('/v1/posts/:postId/comments', authenticateUser, async (req, res) => {
       const commentRef = db.collection('posts').doc(postId).collection('comments').doc();
       
       transaction.set(commentRef, commentData);
-      transaction.update(postRef, {
-        comments: admin.firestore.FieldValue.increment(1),
-        updatedAt: now
-      });
+      
+      const postUpdate = { updatedAt: now };
+      if (!moderationAnalysis.flagged) {
+        postUpdate.comments = admin.firestore.FieldValue.increment(1);
+      }
+      
+      transaction.update(postRef, postUpdate);
 
       return {
         id: commentRef.id,
