@@ -2,9 +2,9 @@
 
 ## Overview
 
-Femina is a Firebase-based serverless backend platform designed specifically for women's empowerment and community building. The platform provides comprehensive API endpoints for community features, AI-powered health assistance, expert consultations, and marketplace functionality. Built as a women-centric platform, it addresses unique challenges and experiences that women face across various life domains including health, career, relationships, and parenting.
+Femina is a Firebase-based serverless backend platform designed specifically for women's empowerment and community building. The platform provides comprehensive API endpoints for community features (posts, comments, stories), AI-powered health assistance, expert consultations, and marketplace functionality. Built as a women-centric platform, it addresses unique challenges and experiences that women face across various life domains including health, career, relationships, and parenting.
 
-The system operates as a complete social platform with expert consultation services, educational resources, and e-commerce capabilities, all powered by modern cloud technologies and AI integration.
+The system operates as a complete social platform with expert consultation services, educational resources, storytelling capabilities, and e-commerce features, all powered by modern cloud technologies and AI integration.
 
 ## User Preferences
 
@@ -16,7 +16,9 @@ Preferred communication style: Simple, everyday language.
 The platform uses Firebase Cloud Functions with TypeScript as the primary serverless backend architecture. Express.js serves as the web framework, providing RESTful API endpoints with proper routing, middleware, and error handling. The system is designed for horizontal scaling through Firebase's managed infrastructure.
 
 ### Database Architecture
-Firestore (NoSQL document database) serves as the primary data store, chosen for its real-time capabilities and seamless Firebase integration. The database handles user profiles, community posts, expert consultations, marketplace products, and chat interactions. Document-based storage allows for flexible schema evolution and efficient querying of hierarchical data structures.
+Firestore (NoSQL document database) serves as the primary data store, chosen for its real-time capabilities and seamless Firebase integration. The database handles user profiles, community posts, stories (with text/audio/image content), expert consultations, marketplace products, and chat interactions. Document-based storage allows for flexible schema evolution and efficient querying of hierarchical data structures.
+
+**Stories Collection**: Supports rich media storytelling with text, images, and audio content. Features include likes, saves, follows, view tracking, moderation workflows, and privacy controls (public/draft visibility).
 
 ### Authentication & Authorization
 Firebase Authentication handles user identity management with custom role-based access control (RBAC). The system supports multiple user roles: user, expert, moderator, and admin. JWT tokens are verified through middleware, with additional user metadata stored in Firestore for role and permission management.
@@ -25,7 +27,7 @@ Firebase Authentication handles user identity management with custom role-based 
 Google's Gemini AI (gemini-1.5-flash model) powers the platform's AI assistant functionality. The system provides category-specific guidance (health, career, relationships, parenting, fitness) with tailored prompts for each domain. AI moderation is implemented for content safety and community guidelines enforcement.
 
 ### File Storage
-Firebase Storage handles all file uploads including profile images, post attachments, product images, and documents. The system includes image optimization using Sharp.js, file type validation, size limitations, and automatic organization by purpose and user.
+Firebase Storage handles all file uploads including profile images, post attachments, story images, story audio, product images, and documents. The system uses Multer middleware for file processing, with image size limits (5MB) and audio limits (20MB). Files are organized by user and purpose with automatic public URL generation for media delivery.
 
 ### Payment Processing
 Stripe integration handles all financial transactions including expert consultation payments, marketplace purchases, and subscription management. The system supports payment intents, refunds, and webhook processing for payment status updates.
