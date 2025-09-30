@@ -501,6 +501,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "stories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "transcriptStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "transcriptionJobId",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

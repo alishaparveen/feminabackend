@@ -25,6 +25,19 @@ perspectiveApi.initializePerspectiveClient().catch(err => {
   console.error('Failed to initialize Perspective API:', err);
 });
 
+const ttsService = require('./services/tts.google');
+ttsService.initializeTTSClient();
+
+const sttService = require('./services/stt.google');
+sttService.initializeSTTClient();
+
+const transcriptionPoller = require('./workers/transcriptionPoller');
+if (process.env.ENABLE_TRANSCRIPTION_POLLER !== 'false') {
+  transcriptionPoller.startPollingLoop(30).catch(err => {
+    console.error('Failed to start transcription poller:', err);
+  });
+}
+
 const app = express();
 
 // Basic middleware
@@ -1305,6 +1318,11 @@ const requireModerator = require('./middleware/requireModerator');
 const adminModerationRoutes = require('./routes/adminModeration');
 
 app.use('/api/admin/moderation', authenticateUser, requireModerator, adminModerationRoutes);
+
+// ========== AUDIO API ==========
+const audioRoutes = require('./routes/audio');
+
+app.use('/api', audioRoutes);
 
 // ========== TOPICS API ==========
 const topicsController = require('./controllers/topicsController');
