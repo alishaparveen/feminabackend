@@ -1,0 +1,136 @@
+We already have comments moderated with the Perspective API and stored in Firestore with moderation metadata (comments/{id} and moderation/{id}/moderationCache). Now add admin endpoints and backend logic so the Admin Dashboard can list and action only comments that need moderation (flagged or reported), and to audit decisions.
+
+Assumptions: Node.js + Express backend; Firebase Admin SDK (Firestore); requireAuth middleware exists and sets req.user including customClaims.moderator; MODERATION_API_KEY and Perspective integration already implemented.
+
+What to add / modify
+1) New routes file: /routes/adminModeration.js
+
+Register routes:
+
+GET /api/admin/moderation/comments — list comments needing moderation (flagged OR reported OR pending), query params: status=flagged|pending|reported|all, pageToken, limit, q (search comment text), sort=createdAt|severity. Requires moderator auth.
+
+GET /api/admin/moderation/comments/:id — get comment + moderation analysis + report(s) + story context.
+
+PUT /api/admin/moderation/comments/:id — moderator action: { action: 'approve'|'reject'|'dismiss'|'resolve', notes?: string }. Return updated moderation record.
+
+POST /api/admin/moderation/comments/bulk — bulk action on array of comment ids: { ids: [...], action }.
+
+GET /api/admin/reports/comments — list user-submitted reports for comments (filter by status).
+
+PUT /api/admin/reports/:reportId — mark report resolved/dismissed + tie to moderator action on comment.
+
+2) Controller: /controllers/adminModerationController.js
+
+Implement:
+
+listFlaggedComments(req,res):
+
+Query Firestore for comments where moderation.status in ['flagged','pending','reported'] OR join reports collection to fetch reported comments.
+
+Support search by comment text (q) using text prefix or fetch ids from search index if you have one.
+
+Support severity sort by max attribute score from comment.moderation.scores (compute top score field or use moderation.highestScore denormalized).
+
+Paginate via cursor (pageToken) or limit.
+
+Return: { items: [{ commentId, storyId, authorId, content, createdAt, moderation: {...}, reportsCount }], meta: { nextPageToken, limit } }.
+
+getCommentModerationDetail(req,res):
+
+Return full comment doc, moderation.analysis (attribute scores), any reports docs referencing the comment, story meta (title, category), and author info.
+
+moderatorDecision(req,res):
+
+Validate moderator claim.
+
+Accept action.
+
+approve: set comments/{id}.approved = true, comments/{id}.moderation.status = 'approved', increment story commentsCount atomically (only if previously not counted).
+
+reject: set moderation.status='rejected' and optionally soft-delete or set visibility='hidden'.
+
+dismiss: mark moderation.status='dismissed' (keeps comment but marks it as reviewed; likely visible).
+
+resolve: mark reports tied to this comment as resolved and moderation.status='resolved'.
+
+Write moderator audit record into moderation/audit/{auditId} with { moderatorId, commentId, action, notes, previousStatus, newStatus, timestamp }.
+
+Return updated comment doc and audit.
+
+bulkModeration(req,res):
+
+Process list of ids in a transaction or batched writes; return successes/failures.
+
+listReports(req,res) and resolveReport(req,res):
+
+Return reports from reports collection filtered by type === 'comment' and status.
+
+Allow moderator to resolve/dismiss and optionally trigger moderatorDecision on comment.
+
+3) Update / Ensure data shapes
+
+comments/{id} should include (if not already):
+
+{
+  "content": "...",
+  "authorId": "...",
+  "storyId": "...",
+  "createdAt": Timestamp,
+  "approved": boolean,
+  "visibility": "public|hidden|deleted",
+  "moderation": {
+    "status": "pending|approved|flagged|rejected|dismissed|resolved",
+    "analysis": { "TOXICITY": 0.92, ... },
+    "highestScore": 0.92,   // denormalized for sorting
+    "reasons": ["toxicity","insult"]
+  }
+}
+
+
+moderation/audit/{id}
+
+{
+  "commentId": "string",
+  "moderatorId": "string",
+  "action": "approve|reject|dismiss|resolve",
+  "notes": "string",
+  "previousStatus": "string",
+  "newStatus": "string",
+  "timestamp": Timestamp
+}
+
+4) Security
+
+Middleware requireModerator verifies req.user.customClaims.moderator===true. Deny otherwise (403).
+
+All admin routes require requireAuth + requireModerator.
+
+5) Performance & indexes
+
+Ensure Firestore index for comments on moderation.status + createdAt and moderation.highestScore + createdAt.
+
+Add collectionGroup indexes if using subcollections.
+
+6) Tests
+
+Unit tests + integration tests (Jest + supertest or Firebase emulator):
+
+listFlaggedComments returns flagged & reported comments only.
+
+moderatorDecision transitions statuses correctly and writes audit record.
+
+bulkModeration processes multiple ids.
+
+listReports returns only comment reports.
+
+7) Acceptance criteria
+
+Admin endpoints list only comments in flagged/pending/reported states (not all comments).
+
+Moderator can approve/reject/dismiss/resolve single or bulk.
+
+Audit records are written for all moderator actions.
+
+Story comment counts are updated only when comment status becomes approved.
+
+Moderator endpoints are protected.

@@ -1279,6 +1279,12 @@ app.put('/v1/moderation/review/:reportId', authenticateUser, staffGuard, async (
   }
 });
 
+// ========== ADMIN MODERATION API ==========
+const requireModerator = require('./middleware/requireModerator');
+const adminModerationRoutes = require('./routes/adminModeration');
+
+app.use('/api/admin/moderation', authenticateUser, requireModerator, adminModerationRoutes);
+
 // ========== TOPICS API ==========
 const topicsController = require('./controllers/topicsController');
 
