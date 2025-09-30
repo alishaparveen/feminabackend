@@ -43,6 +43,15 @@ Custom middleware handles authentication verification, request validation, rate 
 ### Content Moderation
 Automated content moderation uses AI-powered analysis combined with human review workflows. The system supports content reporting, review queues, and automated action taking based on configurable rules and community guidelines.
 
+**Admin Moderation System**: Comprehensive admin dashboard endpoints for moderators to review and action flagged/reported/pending comments. Features include:
+- List comments needing moderation with filtering (flagged/pending/reported/all), severity sorting, text search, and pagination
+- View full moderation details including Perspective API analysis, user reports, story context, and author information
+- Single and bulk moderation actions (approve/reject/dismiss/resolve) with complete audit trail
+- Report management with resolution workflows and optional comment action triggers
+- Audit records stored in moderation/audit/records collection tracking all moderator actions with timestamp, moderator ID, status transitions, and notes
+- Story comment counts automatically updated when comments are approved
+- Protected by requireModerator middleware (checks moderator customClaim or moderators collection)
+
 ## External Dependencies
 
 ### Google Services
