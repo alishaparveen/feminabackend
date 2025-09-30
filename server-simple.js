@@ -12,7 +12,8 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{
 if (!admin.apps.length && serviceAccount.project_id) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    projectId: serviceAccount.project_id
+    projectId: serviceAccount.project_id,
+    storageBucket: `${serviceAccount.project_id}.appspot.com`
   });
   console.log('✅ Firebase Admin SDK initialized');
 }
@@ -1273,6 +1274,110 @@ app.put('/v1/moderation/review/:reportId', authenticateUser, staffGuard, async (
     res.status(error.message === 'Report not found' ? 404 : 500).json({
       success: false,
       error: 'Failed to review report',
+      message: error.message
+    });
+  }
+});
+
+// ========== STORIES API ==========
+const storiesController = require('./controllers/storiesController');
+const { upload, uploadImageToStorage, uploadAudioToStorage } = require('./middleware/upload');
+
+// CRUD operations
+app.post('/v1/stories', authenticateUser, storiesController.createStory);
+app.get('/v1/stories', optionalAuth, storiesController.getStories);
+app.get('/v1/stories/:id', optionalAuth, storiesController.getStoryById);
+app.put('/v1/stories/:id', authenticateUser, storiesController.updateStory);
+app.delete('/v1/stories/:id', authenticateUser, storiesController.deleteStory);
+
+// Interactions
+app.post('/v1/stories/:id/like', authenticateUser, storiesController.toggleLike);
+app.post('/v1/stories/:id/save', authenticateUser, storiesController.toggleSave);
+app.post('/v1/stories/:id/follow-author', authenticateUser, storiesController.toggleFollow);
+app.post('/v1/stories/:id/view', optionalAuth, storiesController.incrementView);
+
+// Reports & Moderation
+app.post('/v1/stories/report', authenticateUser, storiesController.reportStory);
+app.post('/v1/stories/moderate', authenticateUser, staffGuard, storiesController.moderateStory);
+
+// User feeds
+app.get('/v1/users/:id/saved-stories', authenticateUser, storiesController.getUserSavedStories);
+app.get('/v1/users/:id/stories', optionalAuth, storiesController.getUserStories);
+
+// ========== UPLOAD API ==========
+
+// Upload image
+app.post('/v1/upload/image', authenticateUser, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
+        message: 'Please provide an image file'
+      });
+    }
+
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: 'File too large',
+        message: 'Image must be less than 5MB'
+      });
+    }
+
+    const url = await uploadImageToStorage(req.file, req.user.uid);
+
+    res.json({
+      success: true,
+      data: { url },
+      message: 'Image uploaded successfully'
+    });
+
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to upload image',
+      message: error.message
+    });
+  }
+});
+
+// Upload audio
+app.post('/v1/upload/audio', authenticateUser, upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No file uploaded',
+        message: 'Please provide an audio file'
+      });
+    }
+
+    if (req.file.size > 20 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: 'File too large',
+        message: 'Audio must be less than 20MB'
+      });
+    }
+
+    const url = await uploadAudioToStorage(req.file, req.user.uid);
+
+    res.json({
+      success: true,
+      data: { 
+        url,
+        duration: 0
+      },
+      message: 'Audio uploaded successfully'
+    });
+
+  } catch (error) {
+    console.error('Error uploading audio:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to upload audio',
       message: error.message
     });
   }
