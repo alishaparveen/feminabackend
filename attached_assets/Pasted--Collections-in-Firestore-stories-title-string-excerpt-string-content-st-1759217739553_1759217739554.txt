@@ -1,0 +1,143 @@
+🔹 Collections in Firestore
+
+stories
+
+{
+  "title": "string",
+  "excerpt": "string",
+  "content": "string",
+  "tags": ["string"],
+  "authorId": "string",
+  "authorName": "string",
+  "authorAvatar": "string",
+  "imageUrl": "string|null",
+  "audioUrl": "string|null",
+  "audioDuration": 0,
+  "visibility": "public|draft",
+  "likesCount": 0,
+  "views": 0,
+  "commentsCount": 0,
+  "savedBy": ["uid", ...],
+  "createdAt": Timestamp,
+  "updatedAt": Timestamp,
+  "moderation": { "status": "pending|approved|flagged|rejected", "notes": "" }
+}
+
+
+users (already exists, just extend with savedStories: [], following: [])
+
+reports
+
+{
+  "storyId": "string",
+  "reporterId": "string",
+  "reason": "string",
+  "details": "string",
+  "createdAt": Timestamp
+}
+
+🔹 Routes (/routes/stories.js)
+
+POST /api/stories → create story (auth required)
+
+GET /api/stories → list stories (with filters: q, tags, authorId, type, sort, page, limit)
+
+GET /api/stories/:id → get single story
+
+PUT /api/stories/:id → update story (author only)
+
+DELETE /api/stories/:id → delete story (author only)
+
+Interactions:
+
+POST /api/stories/:id/like → toggle like, update likesCount
+
+POST /api/stories/:id/save → toggle save/un-save story for current user
+
+POST /api/stories/:id/follow-author → follow/unfollow story author
+
+POST /api/stories/:id/view → increment views
+
+Uploads:
+
+POST /api/upload/image → accept multipart, upload to Firebase Storage, return { url }
+
+POST /api/upload/audio → accept multipart, upload to Storage, return { url, duration }
+
+Reports & Moderation:
+
+POST /api/report → save a report
+
+POST /api/moderate → stub moderation function (for now just return approved)
+
+User feeds:
+
+GET /api/users/:id/saved-stories → return saved stories for a user
+
+GET /api/users/:id/stories → return all stories by that user
+
+🔹 Controller Functions (/controllers/storiesController.js)
+
+createStory(req, res)
+
+Get req.user.uid, req.user.name, req.user.avatar
+
+Save story doc in Firestore with moderation status "pending"
+
+getStories(req, res)
+
+Support filters: search in title/excerpt, tags array filter, authorId filter
+
+Sorting:
+
+newest → createdAt desc
+
+top → order by likesCount + views (store a score field)
+
+most_commented → order by commentsCount desc
+
+getStoryById(req, res) → return full story + whether current user liked/saved/following
+
+updateStory(req, res) → only author can update
+
+deleteStory(req, res) → only author can delete
+
+toggleLike(req, res) → transaction: if likes/{uid} exists, remove; else add
+
+toggleSave(req, res) → update users/{uid}.savedStories
+
+toggleFollow(req, res) → update users/{uid}.following and users/{authorId}.followerCount
+
+incrementView(req, res) → increment views
+
+🔹 Firestore Notes
+
+Use FieldValue.increment(1) for counters.
+
+Use arrayUnion / arrayRemove for saved stories & following.
+
+Store likes in a subcollection stories/{id}/likes/{uid} to allow quick toggle and consistent counts.
+
+🔹 Storage Uploads
+
+Use multer to handle file uploads in Express.
+
+Save file temporarily, then upload to Firebase Storage using Admin SDK.
+
+Return downloadURL from Storage.
+
+Limit size: images ≤ 5MB, audio ≤ 20MB.
+
+🔹 Tests
+
+Write Jest + Supertest tests for:
+
+Create story → Firestore doc exists
+
+Like toggle → likesCount updates
+
+Save toggle → users.savedStories updated
+
+Fetch stories with tag filter + pagination
+
+👉 Please generate the routes and controllers for Stories in my existing project structure, following the conventions I already use in other routes.
