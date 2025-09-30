@@ -1,0 +1,106 @@
+Add server-side audio support (Google Cloud Text-to-Speech & Speech-to-Text) for Stories.
+
+Environment assumptions:
+- Replit secret `GCP_SA_JSON` exists (the service account JSON string).
+- Firebase Admin SDK already initialized in project.
+- `process.env.STORAGE_BUCKET` set or use `admin.storage().bucket()` default.
+- Use @google-cloud/text-to-speech and @google-cloud/speech libraries.
+
+Goal:
+- Implement endpoints and services to:
+  1. Accept audio uploads (server or signed-url).
+  2. Generate TTS from story text and store resulting audio in Storage.
+  3. Start transcription (STT) jobs for uploaded audio, poll or handle completion, save transcripts to Firestore.
+  4. Return status endpoints to frontend.
+
+Files to create/update (follow project style: `/routes`, `/controllers`, `/services`, `/scripts`, `/tests`):
+- /routes/audio.js
+- /controllers/audioController.js
+- /services/tts.google.js
+- /services/stt.google.js
+- /services/storageHelper.js (helper upload/getSignedUrl)
+- /workers/transcriptionPoller.js (simple polling worker or scheduled runner)
+- /scripts/cleanupTranscriptionJobs.js (optional for tests)
+- /tests/audio.test.js (unit tests mocks)
+
+Dependencies to add:
+- npm install @google-cloud/text-to-speech @google-cloud/speech multer uuid
+
+Service account initialization:
+- Use `const sa = JSON.parse(process.env.GCP_SA_JSON)` then instantiate clients:
+  - `const ttsClient = new TextToSpeechClient({ credentials: sa, projectId: sa.project_id })`
+  - `const sttClient = new SpeechClient({ credentials: sa, projectId: sa.project_id })`
+
+Firestore story fields to use/update:
+- audioUrl (string | null)
+- audioStatus: 'none'|'processing'|'ready'|'failed'
+- audioDuration (number)
+- transcript (string|null)
+- transcriptStatus: 'none'|'processing'|'ready'|'failed'
+- transcriptionJobId (string|null)
+- ttsTaskId (string|null)
+
+Routes & controllers (behavior):
+
+1) POST /api/upload/audio
+- Auth required.
+- Accept multipart form (use multer) or accept `{ requestSignedUrl: true }` to return a signed PUT URL.
+- Validate file type (mp3,m4a,webm) and size <= 30MB.
+- Upload to Storage path `stories/{storyId}/audio/{uuid}.{ext}` or return signed URL.
+- If server uploaded, update story doc: set audioStatus='processing' and kick off transcription (call startTranscription).
+- Return `{ audioPath, audioUrl (signed or public) }`.
+
+2) POST /api/stories/:id/generate-audio
+- Auth & author-only check.
+- Body: `{ voice?, format?: 'mp3'|'ogg', textScope?: 'excerpt'|'content' }`
+- Fetch story doc and build TTS text (title + excerpt or content trimmed to provider limits).
+- Call `tts.google.synthesize(text, {voice, format})`.
+- Save resulting audio to Storage, set `audioUrl`, `audioStatus='ready'`, compute `audioDuration`.
+- If long-generation: return 202 with `{ taskId }` and update story when done.
+
+3) POST /api/stories/:id/transcribe
+- Auth & author-only.
+- Body: `{ audioPath? }` (if not provided use story.audioUrl).
+- Submit audio to Google STT: for short file use `recognize`, for longer use `longRunningRecognize`.
+- Save `transcriptionJobId` and set `transcriptStatus='processing'` in the story doc.
+- Return `{ jobId }` and job polling URL.
+
+4) GET /api/stories/:id/audio-status
+- Public: return `{ audioStatus, audioUrl, transcriptStatus, transcript, audioDuration }`.
+
+5) POST /api/transcriptions/handle (internal/webhook)
+- If you implement polling, worker will call internal function to finalize.
+- When transcription completes, fetch result, update story: `transcript`, `transcriptStatus='ready'`, optionally `transcriptionConfidence`, set `transcriptionJobId=null`.
+- If transcription fails, set `transcriptStatus='failed'` and log error.
+
+6) (Optional) POST /api/stories/:id/regenerate-audio — allow author to re-run TTS.
+
+Implementation details & best practices:
+- Use Firebase Admin Storage API (`admin.storage().bucket()`) to upload files and generate signed URLs for playback (short TTL) OR set public-read if desired.
+- Use streaming synthesize for TTS only for performance; create mp3 output and upload.
+- For STT: use `longRunningRecognize` for files > ~60s; poll with job name until done. Use a worker `transcriptionPoller.js` that runs every N seconds (or a scheduled Cloud Function) to poll job statuses and finalize.
+- Use `FieldValue.increment` for counters only when approving audio-related public changes.
+- Add retry/exponential backoff on external API calls. Cache small text analyses if needed.
+- Enforce transcription and TTS quotas and validate length of text/audio (e.g., limit text to 3000 characters/trim, audio to 10 minutes default).
+
+Security:
+- Validate ownership for endpoints (author only for generate/transcribe/regenerate).
+- Keep `GCP_SA_JSON` secret; never expose to frontend.
+- Use signed URLs for playback if bucket is private; otherwise restrict URL TTL.
+
+Tests:
+- Unit tests mocking google clients for `tts.google.js` and `stt.google.js`.
+- Integration test flows for upload → transcribe start → simulate completion and verify Firestore updated.
+
+Deliverables:
+- New route/controller/service files added to repo.
+- README snippet describing env vars (`GCP_SA_JSON`, `STORAGE_BUCKET`), how to run the poller locally, and how to test flows.
+- Tests added under `/tests` and run locally.
+
+Acceptance criteria:
+1. Upload audio → story doc updated and transcription job started (transcriptStatus='processing').
+2. Simulated transcription completion updates story transcript and sets transcriptStatus='ready'.
+3. Generate audio from story text stores `audioUrl` and sets audioStatus='ready' (or processing with taskId if long).
+4. GET /api/stories/:id/audio-status returns status and urls.
+
+Please scaffold the files above following the repo conventions: routes in /routes, controllers in /controllers, and services in /services.
