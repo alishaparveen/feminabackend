@@ -118,10 +118,12 @@ Per-user preferences system for personalized content discovery and saved filter 
 
 **Validation & Security**:
 - All category strings validated against VALID_CATEGORIES array
+- SubCategory validation ensures value is in VALID_CATEGORIES and matches category prefix (e.g., "Health/Mental Health" requires category "Health")
 - Filter queries validated to only allow safe fields (no raw where clauses)
+- PUT /me/preferences rejects direct savedFilters updates, enforcing use of filter-specific endpoints
 - Firestore transactions use arrayUnion/arrayRemove for concurrent category updates
 - Ownership enforcement: users can only modify their own filters
-- Admin seeding protected by adminGuard middleware
+- Admin seeding isolated in routes/adminPreferences.js, mounted exclusively at /api/admin/seed-preferences with authenticateUser + adminGuard middleware
 
 **Services** (services/preferencesService.js):
 - Category and filter query validation
