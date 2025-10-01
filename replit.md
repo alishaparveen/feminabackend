@@ -35,8 +35,33 @@ An automated system, augmented by human review workflows, uses AI analysis (Pers
 ### Audio Pipeline
 Google Cloud services enable Text-to-Speech (TTS) for story audio generation and Speech-to-Text (STT) for transcribing uploaded audio. The system supports various audio formats, tracks long-running transcription jobs in Firestore, and provides dedicated API endpoints for audio management.
 
-### User Onboarding
+### User Onboarding & Profile Management
 An initial user setup system collects personalization data, including "pillars" (life areas) and "tags" (interests), to tailor content recommendations and create a personalized user feed.
+
+**Firestore Schema (users collection)**:
+- id: Firebase user ID
+- name: User's name (1-50 characters)
+- age: User's age (13-120)
+- pillars: Array of 1-5 pillar IDs from ['health', 'money', 'heart', 'life', 'soul']
+- tags: Array of interest tags (optional)
+- onboardingCompletedAt: ISO timestamp of completion
+- updatedAt: ISO timestamp of last update
+- preferences.pillars: Duplicate for easy querying
+- preferences.tags: Duplicate for easy querying
+- preferences.lastUpdated: ISO timestamp
+
+**API Endpoints** (routes/onboarding.js):
+- POST /api/onboard - Complete user onboarding with personalization data (auth required)
+- GET /api/users/me - Get user profile including onboardingCompletedAt (auth required)
+- DELETE /api/users/me - Delete user data including onboarding status (auth required)
+
+**Validation**:
+- name: Required string, 1-50 characters, trimmed
+- age: Required number, 13-120 range
+- pillars: Required array, 1-5 valid pillar IDs
+- tags: Optional array of strings
+
+**Usage**: The saved pillars and tags in preferences should be used to filter and prioritize stories matching user interests, implement scoring algorithms for "For You" feed, and provide personalized recommendations.
 
 ### User Preferences & Saved Filters
 Users can manage personalized content discovery through following categories, creating custom saved filters for Stories & Community, and receiving recommendations. Preferences are stored in Firestore, with robust validation for categories and filter queries.
