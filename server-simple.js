@@ -1337,6 +1337,30 @@ const { upload, uploadImageToStorage, uploadAudioToStorage } = require('./middle
 // CRUD operations
 app.post('/v1/stories', authenticateUser, storiesController.createStory);
 app.get('/v1/stories', optionalAuth, storiesController.getStories);
+
+app.get('/v1/stories/search', async (req, res) => {
+  const { algoliasearch } = require('algoliasearch');
+  const client = algoliasearch(
+    process.env.ALGOLIA_APP_ID,
+    process.env.ALGOLIA_SEARCH_API_KEY
+  );
+
+  try {
+    const query = req.query.q || '';
+    const { hits } = await client.searchSingleIndex({
+      indexName: 'stories_index',
+      searchParams: {
+        query: query,
+        hitsPerPage: 10
+      }
+    });
+    res.json(hits);
+  } catch (err) {
+    console.error('Algolia search error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/v1/stories/:id', optionalAuth, storiesController.getStoryById);
 app.put('/v1/stories/:id', authenticateUser, storiesController.updateStory);
 app.delete('/v1/stories/:id', authenticateUser, storiesController.deleteStory);
