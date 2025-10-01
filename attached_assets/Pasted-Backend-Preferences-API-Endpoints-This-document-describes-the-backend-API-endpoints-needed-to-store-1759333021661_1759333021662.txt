@@ -1,0 +1,347 @@
+Backend Preferences API Endpoints
+This document describes the backend API endpoints needed to store user preferences in the database.
+
+Overview
+User preferences include:
+
+Followed Categories: Topics/categories the user wants to see content from
+Saved Filters: Custom filter combinations for personalized content discovery
+Recommendations: Algorithm-based category suggestions
+All preferences are user-specific and require authentication.
+
+Endpoints Required
+1. Get User Preferences
+GET /api/users/me/preferences
+
+Retrieves the current user's preferences from the database.
+
+Request Headers
+Authorization: Bearer <firebase-id-token>
+Response (200 OK)
+{
+  "data": {
+    "followedCategories": ["fertility", "mental-health", "career-growth"],
+    "createdAt": "2025-10-01T10:30:00.000Z",
+    "updatedAt": "2025-10-01T15:45:00.000Z"
+  }
+}
+Error Response (404 Not Found)
+{
+  "error": "Preferences not found",
+  "message": "User preferences have not been set yet"
+}
+2. Update User Preferences
+PUT /api/users/me/preferences
+
+Updates or creates the user's preferences in the database.
+
+Request Headers
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+Request Body
+{
+  "followedCategories": ["fertility", "mental-health", "career-growth"]
+}
+Response (200 OK)
+{
+  "data": {
+    "followedCategories": ["fertility", "mental-health", "career-growth"],
+    "createdAt": "2025-10-01T10:30:00.000Z",
+    "updatedAt": "2025-10-01T15:45:00.000Z"
+  }
+}
+Error Response (400 Bad Request)
+{
+  "error": "Validation Error",
+  "message": "followedCategories must be an array of strings"
+}
+3. Follow Category
+POST /api/users/me/preferences/follow
+
+Adds a category to the user's followed categories list.
+
+Request Headers
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+Request Body
+{
+  "category": "fertility"
+}
+Response (200 OK)
+{
+  "data": {
+    "followedCategories": ["mental-health", "career-growth", "fertility"],
+    "updatedAt": "2025-10-01T15:45:00.000Z"
+  }
+}
+4. Unfollow Category
+POST /api/users/me/preferences/unfollow
+
+Removes a category from the user's followed categories list.
+
+Request Headers
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+Request Body
+{
+  "category": "fertility"
+}
+Response (200 OK)
+{
+  "data": {
+    "followedCategories": ["mental-health", "career-growth"],
+    "updatedAt": "2025-10-01T15:45:00.000Z"
+  }
+}
+5. Get Saved Filters (Optional)
+GET /api/users/me/preferences/filters
+
+Retrieves user's saved filter combinations.
+
+Response (200 OK)
+{
+  "data": {
+    "filters": [
+      {
+        "id": "filter-1",
+        "name": "My Fertility Journey",
+        "tags": ["IVF", "TTC", "Pregnancy"],
+        "createdAt": "2025-10-01T10:30:00.000Z"
+      }
+    ]
+  }
+}
+6. Get Recommended Categories (Optional)
+GET /api/recommendations/categories
+
+Returns algorithm-based category recommendations for the user based on their activity.
+
+Response (200 OK)
+{
+  "data": {
+    "categories": ["mindfulness", "postpartum", "work-life-balance"]
+  }
+}
+7. Track Analytics (Optional)
+POST /api/users/me/analytics
+
+Tracks user preference-related analytics events.
+
+Request Body
+{
+  "event": "preferences_saved",
+  "data": {
+    "categories": ["fertility", "mental-health"],
+    "count": 2
+  }
+}
+Response (200 OK)
+{
+  "success": true
+}
+Database Schema
+Firestore Collection: user_preferences
+{
+  // Document ID: user's Firebase UID
+  "userId": "abc123def456",
+  "followedCategories": ["fertility", "mental-health", "career-growth"],
+  "savedFilters": [
+    {
+      "id": "filter-1",
+      "name": "My Fertility Journey",
+      "tags": ["IVF", "TTC", "Pregnancy"],
+      "createdAt": "2025-10-01T10:30:00.000Z"
+    }
+  ],
+  "createdAt": "2025-10-01T10:30:00.000Z",
+  "updatedAt": "2025-10-01T15:45:00.000Z"
+}
+Implementation Example (Node.js/Express)
+// routes/preferences.js
+const express = require('express');
+const router = express.Router();
+const { authenticateUser } = require('../middleware/auth');
+const { db } = require('../config/firebase-admin');
+// GET /api/users/me/preferences
+router.get('/users/me/preferences', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const prefsDoc = await db.collection('user_preferences').doc(userId).get();
+    
+    if (!prefsDoc.exists) {
+      return res.status(404).json({
+        error: 'Preferences not found',
+        message: 'User preferences have not been set yet'
+      });
+    }
+    
+    res.json({ data: prefsDoc.data() });
+  } catch (error) {
+    console.error('Get preferences error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to fetch preferences'
+    });
+  }
+});
+// PUT /api/users/me/preferences
+router.put('/users/me/preferences', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { followedCategories } = req.body;
+    
+    // Validation
+    if (!Array.isArray(followedCategories)) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'followedCategories must be an array of strings'
+      });
+    }
+    
+    const prefsData = {
+      userId,
+      followedCategories,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Check if preferences exist
+    const prefsRef = db.collection('user_preferences').doc(userId);
+    const prefsDoc = await prefsRef.get();
+    
+    if (!prefsDoc.exists) {
+      prefsData.createdAt = new Date().toISOString();
+    }
+    
+    await prefsRef.set(prefsData, { merge: true });
+    
+    res.json({ data: prefsData });
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to update preferences'
+    });
+  }
+});
+// POST /api/users/me/preferences/follow
+router.post('/users/me/preferences/follow', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { category } = req.body;
+    
+    if (!category) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'category is required'
+      });
+    }
+    
+    const prefsRef = db.collection('user_preferences').doc(userId);
+    const prefsDoc = await prefsRef.get();
+    
+    let followedCategories = [];
+    
+    if (prefsDoc.exists) {
+      followedCategories = prefsDoc.data().followedCategories || [];
+    }
+    
+    // Add category if not already followed
+    if (!followedCategories.includes(category)) {
+      followedCategories.push(category);
+    }
+    
+    const updatedData = {
+      userId,
+      followedCategories,
+      updatedAt: new Date().toISOString()
+    };
+    
+    if (!prefsDoc.exists) {
+      updatedData.createdAt = new Date().toISOString();
+    }
+    
+    await prefsRef.set(updatedData, { merge: true });
+    
+    res.json({ data: updatedData });
+  } catch (error) {
+    console.error('Follow category error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to follow category'
+    });
+  }
+});
+// POST /api/users/me/preferences/unfollow
+router.post('/users/me/preferences/unfollow', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { category } = req.body;
+    
+    if (!category) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'category is required'
+      });
+    }
+    
+    const prefsRef = db.collection('user_preferences').doc(userId);
+    const prefsDoc = await prefsRef.get();
+    
+    if (!prefsDoc.exists) {
+      return res.status(404).json({
+        error: 'Preferences not found',
+        message: 'User preferences have not been set yet'
+      });
+    }
+    
+    const followedCategories = (prefsDoc.data().followedCategories || [])
+      .filter(cat => cat !== category);
+    
+    const updatedData = {
+      followedCategories,
+      updatedAt: new Date().toISOString()
+    };
+    
+    await prefsRef.update(updatedData);
+    
+    res.json({ data: { ...prefsDoc.data(), ...updatedData } });
+  } catch (error) {
+    console.error('Unfollow category error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to unfollow category'
+    });
+  }
+});
+module.exports = router;
+Security Considerations
+Authentication: Always verify Firebase ID token using admin.auth().verifyIdToken()
+Authorization: Users can only access/modify their own preferences (userId from token must match)
+Input Validation: Validate all input data (arrays, strings, category names)
+Rate Limiting: Implement rate limiting to prevent abuse (e.g., 100 requests per minute per user)
+Data Sanitization: Sanitize category names and filter data before storing
+Testing
+Test GET Preferences (New User)
+curl -X GET https://your-backend.replit.app/api/users/me/preferences \
+  -H "Authorization: Bearer <firebase-id-token>"
+# Expected: 404 Not Found
+Test PUT Preferences
+curl -X PUT https://your-backend.replit.app/api/users/me/preferences \
+  -H "Authorization: Bearer <firebase-id-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"followedCategories": ["fertility", "mental-health"]}'
+# Expected: 200 OK with preferences data
+Test Follow Category
+curl -X POST https://your-backend.replit.app/api/users/me/preferences/follow \
+  -H "Authorization: Bearer <firebase-id-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"category": "career-growth"}'
+# Expected: 200 OK with updated followedCategories
+Integration with Frontend
+Once the backend endpoints are implemented, the frontend will automatically switch from localStorage to database storage. The preferencesApi.js file already has the logic to:
+
+Development Mode: Use localStorage fallback
+Production Mode: Use backend API endpoints
+To enable production mode, set the environment variable:
+
+VITE_USE_LOCAL_STORAGE=false
