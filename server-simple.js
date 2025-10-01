@@ -1332,6 +1332,11 @@ app.use('/api/users', authenticateUser, preferencesRoutes);
 app.use('/api', optionalAuth, preferencesRoutes);
 app.use('/api/admin', authenticateUser, adminGuard, adminPreferencesRoutes);
 
+// ========== ONBOARDING API ==========
+const onboardingRoutes = require('./routes/onboarding');
+
+app.use('/api', authenticateUser, onboardingRoutes);
+
 // ========== TOPICS API ==========
 const topicsController = require('./controllers/topicsController');
 

@@ -1,0 +1,231 @@
+Backend Onboarding Endpoint Implementation
+Endpoint: POST /api/onboard
+This endpoint handles user onboarding data submission and saves user preferences (pillars and tags) for personalized feed.
+
+Request
+Method: POST
+Path: /api/onboard
+Authentication: Required (Firebase ID token in Authorization header)
+
+Request Body:
+
+{
+  "name": "Alisha",
+  "age": 29,
+  "pillars": ["health", "heart"],
+  "tags": ["IVF", "Postpartum", "Mental Health", "Dating & Love", "Boundaries"]
+}
+Field Validation:
+
+name (string, required): User's name, trimmed, 1-50 characters
+age (number, required): User's age, must be between 13-120
+pillars (array, required): Array of pillar IDs, at least 1 pillar, max 5 pillars
+Valid pillar IDs: health, money, heart, life, soul
+tags (array, optional): Array of tag strings, can be empty
+Response
+Success Response (200 OK):
+
+{
+  "success": true,
+  "user": {
+    "id": "firebase-user-id",
+    "name": "Alisha",
+    "age": 29,
+    "pillars": ["health", "heart"],
+    "tags": ["IVF", "Postpartum", "Mental Health", "Dating & Love", "Boundaries"],
+    "onboardingCompletedAt": "2025-10-01T12:34:56.789Z"
+  }
+}
+Error Responses:
+
+401 Unauthorized:
+
+{
+  "error": "Unauthorized",
+  "message": "Authentication required"
+}
+400 Bad Request:
+
+{
+  "error": "Validation Error",
+  "message": "Invalid request data",
+  "details": {
+    "name": "Name is required",
+    "age": "Age must be between 13 and 120",
+    "pillars": "At least one pillar must be selected"
+  }
+}
+500 Internal Server Error:
+
+{
+  "error": "Internal Server Error",
+  "message": "Failed to save onboarding data"
+}
+Implementation Example (Node.js/Express)
+// routes/onboarding.js
+const express = require('express');
+const router = express.Router();
+const { authenticateUser } = require('../middleware/auth');
+const { db } = require('../config/firebase-admin');
+// POST /api/onboard
+router.post('/onboard', authenticateUser, async (req, res) => {
+  try {
+    const { name, age, pillars, tags = [] } = req.body;
+    const userId = req.user.uid; // From Firebase auth middleware
+    // Validation
+    const errors = {};
+    
+    if (!name || name.trim().length === 0) {
+      errors.name = 'Name is required';
+    } else if (name.trim().length > 50) {
+      errors.name = 'Name must be 50 characters or less';
+    }
+    
+    if (!age || typeof age !== 'number') {
+      errors.age = 'Age is required';
+    } else if (age < 13 || age > 120) {
+      errors.age = 'Age must be between 13 and 120';
+    }
+    
+    if (!Array.isArray(pillars) || pillars.length === 0) {
+      errors.pillars = 'At least one pillar must be selected';
+    } else if (pillars.length > 5) {
+      errors.pillars = 'Maximum 5 pillars allowed';
+    }
+    
+    const validPillars = ['health', 'money', 'heart', 'life', 'soul'];
+    if (pillars.some(p => !validPillars.includes(p))) {
+      errors.pillars = 'Invalid pillar selection';
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Invalid request data',
+        details: errors
+      });
+    }
+    // Save to database
+    const userData = {
+      id: userId,
+      name: name.trim(),
+      age,
+      pillars,
+      tags: Array.isArray(tags) ? tags : [],
+      onboardingCompletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    // Update user document in Firestore - includes preferences for filtering
+    await db.collection('users').doc(userId).set({
+      ...userData,
+      preferences: {
+        pillars,
+        tags,
+        lastUpdated: new Date().toISOString()
+      }
+    }, { merge: true });
+    // Return success response
+    res.status(200).json({
+      success: true,
+      user: userData
+    });
+  } catch (error) {
+    console.error('Onboarding error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to save onboarding data'
+    });
+  }
+});
+module.exports = router;
+Database Schema (Firestore)
+Collection: users
+Document ID: Firebase User UID
+
+users/{userId}
+{
+  id: string,                    // Firebase user ID
+  name: string,                  // User's name
+  age: number,                   // User's age
+  pillars: string[],             // Selected pillars (for filtering)
+  tags: string[],                // Selected tags (for filtering)
+  onboardingCompletedAt: string, // ISO timestamp
+  updatedAt: string,             // ISO timestamp
+  preferences: {
+    pillars: string[],           // Duplicate for easy querying
+    tags: string[],              // Duplicate for easy querying
+    lastUpdated: string          // ISO timestamp
+  }
+}
+Using Filters for Personalization
+Feed Personalization Query Example:
+
+// Get user's preferences
+const userDoc = await db.collection('users').doc(userId).get();
+const { pillars, tags } = userDoc.data().preferences;
+// Query stories matching user's tags (exact match)
+const storiesByTags = await db.collection('stories')
+  .where('tags', 'array-contains-any', tags.slice(0, 10)) // Firestore limit: 10 items
+  .orderBy('createdAt', 'desc')
+  .limit(20)
+  .get();
+// Query stories matching user's pillars
+const storiesByPillars = await db.collection('stories')
+  .where('pillar', 'in', pillars)
+  .orderBy('createdAt', 'desc')
+  .limit(20)
+  .get();
+// Combine and score results
+const personalizedFeed = combineAndScore(storiesByTags, storiesByPillars, { tags, pillars });
+Scoring Algorithm Example:
+
+function scoreStory(story, userPreferences) {
+  let score = 0;
+  
+  // Tag matches (high weight)
+  const tagMatches = story.tags.filter(tag => userPreferences.tags.includes(tag));
+  score += tagMatches.length * 10;
+  
+  // Pillar match (medium weight)
+  if (userPreferences.pillars.includes(story.pillar)) {
+    score += 5;
+  }
+  
+  // Recency bonus
+  const ageInDays = (Date.now() - new Date(story.createdAt)) / (1000 * 60 * 60 * 24);
+  score += Math.max(0, 3 - ageInDays); // Bonus for stories < 3 days old
+  
+  return score;
+}
+Usage Notes
+Authentication: The endpoint requires a valid Firebase ID token in the Authorization header:
+
+Authorization: Bearer <firebase-id-token>
+Feed Personalization: The saved pillars and tags in preferences should be used to:
+
+Filter and prioritize stories matching user's tags
+Show stories from user's selected pillar categories
+Implement scoring algorithms for "For You" feed
+Exclude irrelevant content
+Updating Preferences: Users can update their preferences later. Consider creating a PATCH endpoint:
+
+router.patch('/users/:userId/preferences', authenticateUser, async (req, res) => {
+  // Allow updating pillars and tags
+});
+Analytics Tracking: Track onboarding metrics:
+
+Completion rate
+Most popular pillar combinations
+Average number of tags selected
+Drop-off points in the flow
+Recommendations: Use preferences to suggest:
+
+Additional tags based on selected pillars
+Popular stories in their interest areas
+Similar users to follow
+Key Points:
+
+✅ Pillars and tags are saved in the preferences object for easy querying
+✅ Use these filters to personalize the "For You" feed
+✅ Duplicate storage (top-level and in preferences) makes querying flexible
+✅ All data is tied to the authenticated user's Firebase UID

@@ -10,6 +10,11 @@ The system operates as a complete social platform with expert consultation servi
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+**October 2025**:
+- Added user onboarding endpoint (POST /api/onboard) for initial user setup with personalized pillars and tags for feed personalization
+
 ## System Architecture
 
 ### Backend Framework
@@ -89,6 +94,32 @@ Google Cloud audio services power Stories audio generation and transcription cap
 - services/storageHelper.js: Firebase Storage operations including uploads, signed URLs, file management
 
 **Background Worker**: workers/transcriptionPoller.js runs every 30 seconds to poll Google Cloud for transcription job completion, updating Firestore with results when ready. Requires Firestore composite index (transcriptStatus/transcriptionJobId) deployed for efficient queries.
+
+### User Onboarding
+Initial user setup system that collects personalization data for feed customization. Users select pillars (life areas) and tags (specific interests) during onboarding to receive personalized content recommendations.
+
+**Firestore Schema (users collection)**:
+- id: Firebase user ID
+- name: User's name (1-50 characters)
+- age: User's age (13-120)
+- pillars: Array of 1-5 pillar IDs from ['health', 'money', 'heart', 'life', 'soul']
+- tags: Array of interest tags (optional)
+- onboardingCompletedAt: ISO timestamp of completion
+- updatedAt: ISO timestamp of last update
+- preferences.pillars: Duplicate for easy querying
+- preferences.tags: Duplicate for easy querying
+- preferences.lastUpdated: ISO timestamp
+
+**API Endpoint** (routes/onboarding.js):
+- POST /api/onboard - Complete user onboarding with personalization data (auth required)
+
+**Validation**:
+- name: Required string, 1-50 characters, trimmed
+- age: Required number, 13-120 range
+- pillars: Required array, 1-5 valid pillar IDs
+- tags: Optional array of strings
+
+**Usage**: The saved pillars and tags in preferences should be used to filter and prioritize stories matching user interests, implement scoring algorithms for "For You" feed, and provide personalized recommendations.
 
 ### User Preferences & Saved Filters
 Per-user preferences system for personalized content discovery and saved filter management. Users can follow categories, create custom saved filters for Stories & Community, and receive personalized recommendations.
