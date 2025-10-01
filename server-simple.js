@@ -1326,10 +1326,11 @@ app.use('/api', audioRoutes);
 
 // ========== USER PREFERENCES API ==========
 const preferencesRoutes = require('./routes/preferences');
+const adminPreferencesRoutes = require('./routes/adminPreferences');
 
 app.use('/api/users', authenticateUser, preferencesRoutes);
-app.get('/api/recommendations/categories', optionalAuth, preferencesRoutes);
-app.post('/api/admin/seed-preferences', authenticateUser, adminGuard, preferencesRoutes);
+app.use('/api', optionalAuth, preferencesRoutes);
+app.use('/api/admin', authenticateUser, adminGuard, adminPreferencesRoutes);
 
 // ========== TOPICS API ==========
 const topicsController = require('./controllers/topicsController');

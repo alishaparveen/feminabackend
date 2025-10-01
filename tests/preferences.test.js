@@ -50,7 +50,11 @@ app.get('/api/recommendations/categories', optionalAuth, preferencesRoutes);
 
 const adminApp = express();
 adminApp.use(express.json());
-adminApp.use('/api/admin/seed-preferences', adminAuthenticateUser, adminGuard, preferencesRoutes);
+const adminRouter = express.Router();
+adminRouter.use(adminAuthenticateUser);
+adminRouter.use(adminGuard);
+adminRouter.use(preferencesRoutes);
+adminApp.use('/api/admin', adminRouter);
 
 jest.mock('firebase-admin', () => {
   const mockFirestore = {

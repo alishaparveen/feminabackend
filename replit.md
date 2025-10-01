@@ -90,6 +90,49 @@ Google Cloud audio services power Stories audio generation and transcription cap
 
 **Background Worker**: workers/transcriptionPoller.js runs every 30 seconds to poll Google Cloud for transcription job completion, updating Firestore with results when ready. Requires Firestore composite index (transcriptStatus/transcriptionJobId) deployed for efficient queries.
 
+### User Preferences & Saved Filters
+Per-user preferences system for personalized content discovery and saved filter management. Users can follow categories, create custom saved filters for Stories & Community, and receive personalized recommendations.
+
+**Firestore Schema (users collection)**:
+- preferences.followedCategories: Array of category strings (e.g., ["Health/Mental Health", "Career/Career Growth"])
+- preferences.savedFilters: Object map of filter IDs to filter objects with name, type, query, timestamps
+- preferences.discoverySettings: Optional age, interests for personalized recommendations
+- preferences.isSeed: 'demo' marker for admin-seeded test data
+
+**Supported Categories**: Health, Health/Mental Health, Health/PCOS, Health/Pregnancy, Health/Menopause, Career, Career/Career Growth, Career/Work-Life Balance, Career/Leadership, Relationships, Relationships/Marriage, Relationships/Dating, Relationships/Friendship, Parenting, Parenting/Newborn, Parenting/Toddler, Parenting/Teen, Finance, Finance/Investing, Finance/Budgeting, Finance/Entrepreneurship, Lifestyle, Lifestyle/Travel, Lifestyle/Hobbies, Lifestyle/Home, Education, Education/Skills, Education/Degrees, Support, Support/Abuse, Support/Loss, Support/Trauma, Wellness, Wellness/Yoga, Wellness/Meditation, Wellness/Fitness, Legal, Legal/Family Law, Legal/Workplace Law, Legal/Property Rights
+
+**Filter Types**: stories, community
+
+**Saved Filter Query Fields (Validated)**: category, subCategory, tags, sort (newest/top/most_commented), pageSize (1-50), dateRange
+
+**API Endpoints** (routes/preferences.js):
+- GET /api/users/me/preferences - Get user's preferences (auth required)
+- PUT /api/users/me/preferences - Update preferences (partial merge, auth required)
+- POST /api/users/me/preferences/follow - Follow a category (auth required)
+- POST /api/users/me/preferences/unfollow - Unfollow a category (auth required)
+- POST /api/users/me/preferences/filters - Create saved filter (auth required)
+- PUT /api/users/me/preferences/filters/:filterId - Update saved filter (auth required, ownership enforced)
+- DELETE /api/users/me/preferences/filters/:filterId - Delete saved filter (auth required, ownership enforced)
+- GET /api/recommendations/categories - Get recommended categories based on age/followed categories (optional auth)
+- POST /api/admin/seed-preferences - Seed demo preferences for test users (admin only)
+
+**Validation & Security**:
+- All category strings validated against VALID_CATEGORIES array
+- Filter queries validated to only allow safe fields (no raw where clauses)
+- Firestore transactions use arrayUnion/arrayRemove for concurrent category updates
+- Ownership enforcement: users can only modify their own filters
+- Admin seeding protected by adminGuard middleware
+
+**Services** (services/preferencesService.js):
+- Category and filter query validation
+- CRUD operations for preferences and filters
+- Recommendation algorithm based on age groups and followed categories
+- Demo data seeding for testing
+
+**Testing**:
+- Unit tests: tests/preferences.test.js (Jest with mocked Firestore)
+- Manual integration script: scripts/manual_check_preferences.sh (curl examples)
+
 ## External Dependencies
 
 ### Google Services

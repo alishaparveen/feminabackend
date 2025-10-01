@@ -72,6 +72,15 @@ function validateFilterQuery(query) {
     throw new Error(`Invalid category in filter: ${query.category}`);
   }
 
+  if (query.subCategory) {
+    if (!VALID_CATEGORIES.includes(query.subCategory)) {
+      throw new Error(`Invalid subCategory in filter: ${query.subCategory}`);
+    }
+    if (query.category && !query.subCategory.startsWith(query.category + '/')) {
+      throw new Error(`SubCategory "${query.subCategory}" is not compatible with category "${query.category}"`);
+    }
+  }
+
   if (query.sort && !['newest', 'top', 'most_commented'].includes(query.sort)) {
     throw new Error(`Invalid sort value: ${query.sort}`);
   }

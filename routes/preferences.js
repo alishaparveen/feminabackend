@@ -26,16 +26,16 @@ router.put('/me/preferences', async (req, res) => {
     const uid = req.user.uid;
     const updates = req.body;
 
-    if (updates.followedCategories && Array.isArray(updates.followedCategories)) {
-      updates.followedCategories.forEach(cat => preferencesService.validateCategory(cat));
+    if (updates.savedFilters) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot update savedFilters directly',
+        message: 'Use the filter-specific endpoints to manage saved filters'
+      });
     }
 
-    if (updates.savedFilters && typeof updates.savedFilters === 'object') {
-      Object.values(updates.savedFilters).forEach(filter => {
-        if (filter.query) {
-          preferencesService.validateFilterQuery(filter.query);
-        }
-      });
+    if (updates.followedCategories && Array.isArray(updates.followedCategories)) {
+      updates.followedCategories.forEach(cat => preferencesService.validateCategory(cat));
     }
 
     const updatedPreferences = await preferencesService.updateUserPreferences(uid, updates);
@@ -214,34 +214,6 @@ router.get('/recommendations/categories', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch recommendations',
-      message: error.message
-    });
-  }
-});
-
-router.post('/admin/seed-preferences', async (req, res) => {
-  try {
-    const { uid } = req.body;
-
-    if (!uid) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
-
-    const preferences = await preferencesService.seedDemoPreferences(uid);
-
-    res.json({
-      success: true,
-      data: { preferences },
-      message: 'Demo preferences seeded successfully'
-    });
-  } catch (error) {
-    console.error('Error seeding preferences:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to seed preferences',
       message: error.message
     });
   }
