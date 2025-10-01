@@ -1,0 +1,78 @@
+Add per-user saved preferences and saved filters (for Stories & Community) to the backend. Implement Firestore schema, secure endpoints, and an admin seeder.
+
+Requirements & notes
+- Auth: endpoints require authenticated user (Firebase ID token). Use existing auth middleware.
+- Data must be per-user and safe to update only by the user (or admin).
+- Support both simple "follow category" toggles and complex saved filters (arbitrary filter objects).
+- Provide endpoints for use by frontend to show recommended categories on login, get/set preferences, and admin seeding/deleting seed preferences.
+
+Firestore schema
+- Collection: users (existing)
+  - doc: { uid }
+  - fields: displayName, email, ...
+  - new field: preferences: {
+       followedCategories: [ "Health/Mental Health", "Career/Career Growth" ],
+       savedFilters: {
+         "<filterId>": {
+           name: "My Parenting Filter",
+           type: "stories" | "community",
+           query: { category: "Parenting", tags: ["postpartum"], sort: "newest", pageSize: 12 },
+           createdAt: timestamp,
+           updatedAt: timestamp
+         },
+         ...
+       },
+       discoverySettings: { age: 25, interests: ["career", "finance"] } // optional
+     }
+
+- Collection: userSavedFilters (optional alternative if you prefer separate collection)
+  - doc id = `${uid}_${uuid}`
+  - fields: uid, name, type, query, isDefault, createdAt, updatedAt
+
+Endpoints to implement
+1) GET /api/users/me/preferences
+   - Auth required
+   - Returns the user's preferences object (followedCategories, savedFilters list, discoverySettings)
+
+2) PUT /api/users/me/preferences
+   - Auth required
+   - Accepts a partial preferences object to update (merge). Validate schema.
+   - Only allow follow/unfollow updates to categories array or savedFilters CRUD.
+
+3) POST /api/users/me/preferences/follow
+   - Body: { category: "Health/Mental Health" }
+   - Adds category to followedCategories (no duplicate)
+   - Returns updated list
+
+4) POST /api/users/me/preferences/unfollow
+   - Body: { category: "Health/Mental Health" }
+   - Removes category
+
+5) POST /api/users/me/preferences/filters
+   - Body: { name, type, query }  // query is a JSON object representing filters
+   - Adds saved filter (server generates id + createdAt)
+   - Returns created filter
+
+6) PUT /api/users/me/preferences/filters/:filterId
+   - Update name or query; must belong to user
+
+7) DELETE /api/users/me/preferences/filters/:filterId
+   - Delete saved filter; must belong to user
+
+8) GET /api/recommendations/categories?age=..&gender=..
+   - Public (no auth) or optional auth
+   - Returns category suggestions (use a simple algorithm: if user has followed categories return complementary ones; otherwise return popular categories). Also include a field `isSeed` for admin-seeded categories.
+
+9) Admin-only route (protected) — POST /api/admin/seed-preferences
+   - Creates a set of sample preferences for a test user or multiple demo users (only admin allowed)
+
+Implementation details & validations
+- All user writable endpoints must check req.user.uid and only update that user's doc.
+- Input validation: category string must match a pre-approved category list (server has a static array of valid categories/subcategories).
+- Saved filter `query` should be validated to only allow safe fields: category, subCategory, tags, sort, pageSize, dateRange; reject raw `where` clauses.
+- Use Firestore transactions for concurrent updates to followedCategories arrays, or use `arrayUnion` / `arrayRemove`.
+- Add indexes: none required beyond existing story queries; if you plan on querying userSavedFilters by uid use index on uid.
+
+Security & Rules
+- Update Firestore rules to ensure only the user or admins can modify `/users/{uid}/preferences` or `/userSavedFilters/{doc}`.
+  Example rule:
